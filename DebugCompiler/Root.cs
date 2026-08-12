@@ -1,24 +1,25 @@
-﻿using System;
+﻿using Microsoft.Test.Xbox.XDRPC;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using TreyarchCompiler;
-using T7CompilerLib;
-using TreyarchCompiler.Enums;
-using T7CompilerLib.OpCodes;
-using XDevkit;
-using Microsoft.Test.Xbox.XDRPC;
-using TreyarchCompiler.Utilities;
 using System.Windows.Forms.VisualStyles;
-using System.Globalization;
-using System.Runtime.InteropServices;
-using System.Diagnostics;
-using System.Reflection;
-using System.Net;
+using T7CompilerLib;
+using T7CompilerLib.OpCodes;
 using T89CompilerLib;
+using TreyarchCompiler;
+using TreyarchCompiler.Enums;
+using TreyarchCompiler.Utilities;
+using XDevkit;
 
 namespace DebugCompiler
 {
@@ -32,16 +33,17 @@ namespace DebugCompiler
         private delegate int CommandHandler(string[] args, string[] opts);
         private Dictionary<ConsoleKey, CommandInfo> CommandTable = new Dictionary<ConsoleKey, CommandInfo>();
         private bool ClearHistory = false;
-        private static string UpdatesURL = "https://gsc.dev/t7c_version";
-        private static string UpdaterURL = "https://gsc.dev/t7c_updater";
+        private static string UpdatesURL = "https://raw.githubusercontent.com/AuroraDoesCode/t7-compiler/refs/heads/master/version";
+        private static string UpdaterURL = "https://github.com/AuroraDoesCode/t7-compiler-custom/raw/refs/heads/dev_csc_inj/update.zip";
         private static string motdpath => Path.Combine(Application.StartupPath, "motd");
-        private const int motdHrsRemindClear = 4; // number of hours between reminding users about the message of the day.
+        private const int motdHrsRemindClear = 4; // number of hours between reminding users about the message of the day
+        private static string T7ProcessName = "blackops3";
         static void motd()
         {
             var fi = new FileInfo(motdpath);
             if (fi.Exists)
             {
-                if((DateTime.Now - fi.LastWriteTimeUtc).TotalMinutes <= (60 * motdHrsRemindClear))
+                if ((DateTime.Now - fi.LastWriteTimeUtc).TotalMinutes <= (60 * motdHrsRemindClear))
                 {
                     return; // we dont want to spam users with artificial delays in the program. Lets be nice and only show the motd once every 4 hours.
                 }
@@ -59,7 +61,15 @@ namespace DebugCompiler
             string lv = GetEmbeddedVersion();
             Console.WriteLine("Custom Treyarch Compiler\n");
             Console.WriteLine("Original: https://github.com/shiversoftdev/t7-compiler");
+            if (options.Contains("--boiii"))
+            {
+                T7ProcessName = "boiii";
+            }
 
+            if (options.Contains("--t7x"))
+            {
+                T7ProcessName = "t7x";
+            }
             Root root = new Root();
             if (options.Contains("--build") || options.Contains("--compile"))
             {
@@ -628,6 +638,7 @@ namespace DebugCompiler
                 } catch { }
             }
 
+            string outName = "compiled";
             if (File.Exists("gsc.conf"))
             {
                 foreach (string line in File.ReadAllLines("gsc.conf"))
@@ -822,7 +833,10 @@ namespace DebugCompiler
                     }
                     return Error(code.Error);
                 }
-
+                if (code.StubbedScript != null)
+                {
+                    File.WriteAllBytes($"compiled.stub.gscc", code.StubScriptData);
+                }
                 string cpath = $"{cfg.OutputName}.{(client ? (code.RequiresGSI ? "csic" : "cscc") : (code.RequiresGSI ? "gsic" : "gscc"))}";
                 File.WriteAllBytes(cpath, code.CompiledScript);
                 foreach (var kvp in code.HashMap)
@@ -976,29 +990,41 @@ namespace DebugCompiler
 
         private int InjectT7(string replacePath, byte[] buffer, hotmode hot, bool noruntime)
         {
+
+            using (SHA256 sha256Hash = SHA256.Create())
+            {
+                byte[] data = sha256Hash.ComputeHash(buffer);
+                StringBuilder sBuilder = new StringBuilder();
+                for (int i = 0; i < data.Length; i++)
+                {
+                    sBuilder.Append(data[i].ToString("x2"));
+                }
+                Console.WriteLine($"Injecting File SHA-256: {sBuilder.ToString()}");
+            }
+
             NoExcept(FreeT7Script);
             GSICInfo gsi = null;
             if (BitConverter.ToInt64(buffer, 0) != 0x1C000A0D43534780)
             {
                 string preamble = Encoding.ASCII.GetString(buffer.Take(4).ToArray());
-                if(preamble != "GSIC")
+                if (preamble != "GSIC")
                 {
                     return Error("Script is not a valid compiled script. Please use a script compiled for Black Ops III.");
                 }
-                using(MemoryStream ms = new MemoryStream(buffer))
+                using (MemoryStream ms = new MemoryStream(buffer))
                 using (BinaryReader reader = new BinaryReader(ms))
                 {
                     T7ScriptObject.GSIFields currentField = T7ScriptObject.GSIFields.Detours;
                     reader.BaseStream.Position += 4;
                     gsi = new GSICInfo();
-                    for(int numFields = reader.ReadInt32(); numFields > 0; numFields--)
+                    for (int numFields = reader.ReadInt32(); numFields > 0; numFields--)
                     {
                         currentField = (T7ScriptObject.GSIFields)reader.ReadInt32();
-                        switch(currentField)
+                        switch (currentField)
                         {
                             case T7ScriptObject.GSIFields.Detours:
                                 int numdetours = reader.ReadInt32();
-                                for(int j = 0; j < numdetours; j++)
+                                for (int j = 0; j < numdetours; j++)
                                 {
                                     T7ScriptObject.ScriptDetour detour = new T7ScriptObject.ScriptDetour();
                                     detour.Deserialize(reader);
@@ -1009,22 +1035,24 @@ namespace DebugCompiler
                     }
                     buffer = buffer.Skip((int)reader.BaseStream.Position).ToArray();
                 }
-                if(BitConverter.ToInt64(buffer, 0) != 0x1C000A0D43534780)
+                if (BitConverter.ToInt64(buffer, 0) != 0x1C000A0D43534780)
                 {
                     return Error("Script is not a valid compiled script. Please use a script compiled for Black Ops III.");
                 }
             }
-            ProcessEx bo3 = "blackops3";
+            ProcessEx bo3 = T7ProcessName;
             if (bo3 == null)
             {
                 return Error("No game process found for Black Ops III.");
             }
+            bool IsWindowsStore = !(bo3["GameChat2.dll"] is null);
             bo3.OpenHandle();
             bo3.SetDefaultCallType(ExCallThreadType.XCTT_QUAPC);
             OriginalPID = bo3.BaseProcess.Id;
-            Console.WriteLine($"s_assetPool:ScriptParseTree => {bo3[0x9407AB0]}");
-            var sptGlob = bo3.GetValue<ulong>(bo3[0x9407AB0]);
-            var sptCount = bo3.GetValue<int>(bo3[0x9407AB0 + 0x14]);
+            PointerEx off = IsWindowsStore ? 0xF3B1330 : 0x9388AB0;
+            Console.WriteLine($"s_assetPool:ScriptParseTree => {bo3["blackops3.exe"][off]}");
+            var sptGlob = bo3.GetValue<ulong>(bo3["blackops3.exe"][off]);
+            var sptCount = bo3.GetValue<int>(bo3["blackops3.exe"][off + 0x14]);
             var SPTEntries = bo3.GetArray<T7SPT>(sptGlob, sptCount);
             for (int i = 0; i < SPTEntries.Length; i++)
             {
@@ -1037,13 +1065,13 @@ namespace DebugCompiler
                     if (hot != hotmode.none || name.ToLower().Trim().Replace("\\", "/") == replacePath.ToLower().Trim().Replace("\\", "/"))
                     {
                         // cache target info
-                        if(hot == hotmode.none)
+                        if (hot == hotmode.none)
                         {
                             llpModifiedSPTStruct = (ulong)(i * Marshal.SizeOf(typeof(T7SPT))) + sptGlob;
                             llpOriginalBuffer = entry.lpBuffer;
                             OriginalSourceChecksum = bo3.GetValue<int>(llpOriginalBuffer + 0x8);
                         }
-                        
+
 
                         // patch script into memory
                         entry.lpBuffer = bo3.QuickAlloc(buffer.Length);
@@ -1051,7 +1079,7 @@ namespace DebugCompiler
                         bo3.SetBytes(entry.lpBuffer, buffer);
 
                         // patch spt struct
-                        if(hot == hotmode.none)
+                        if (hot == hotmode.none)
                         {
                             bo3.SetStruct(llpModifiedSPTStruct, entry);
 
@@ -1059,8 +1087,8 @@ namespace DebugCompiler
                             InjectedScript = entry;
                             InjectedBuffSize = buffer.Length;
                         }
-                        
-                        if(!noruntime)
+
+                        if (!noruntime)
                         {
                             try
                             {
@@ -1090,18 +1118,21 @@ namespace DebugCompiler
                                 return 3;
                             }
                         }
-                        
-                        if(hot != hotmode.none)
+
+                        if (hot != hotmode.none)
                         {
-                            // grab the asm buffer from resources, map and execute
-                            var assembly = Assembly.GetExecutingAssembly();
-                            var resourceName = "DebugCompiler.hotload.dat";
-                            byte[] hot_fn = new byte[0];
-                            using (Stream stream = assembly.GetManifestResourceStream(resourceName))
-                            {
-                                hot_fn = new byte[stream.Length];
-                                stream.Read(hot_fn, 0, (int)stream.Length);
-                            }
+                            string exeFilePath = Assembly.GetExecutingAssembly().Location;
+                            var pe = new System.PEStructures.PEImage(File.ReadAllBytes(Path.Combine(Path.GetDirectoryName(exeFilePath), "t7cinternal.dll")));
+                            var targetExport = IsWindowsStore ? "HotloadScript_WinStore" : "HotloadScript_Steam";
+                            var targetHigh = IsWindowsStore ? "HotloadScript_WinStore_Trail" : "HotloadScript_Steam_Trail";
+
+                            var internalHndl = System.Evasion.ModuleMapper.MapModuleToMemory(Path.Combine(Path.GetDirectoryName(exeFilePath), "t7cinternal.dll")).ModuleBase;
+                            var expLo = (PointerEx)System.Evasion.ModuleMapper.GetExportAddress(internalHndl, targetExport);
+                            var expHi = (PointerEx)System.Evasion.ModuleMapper.GetExportAddress(internalHndl, targetHigh);
+
+                            byte[] hot_fn = new byte[expHi - expLo];
+                            Marshal.Copy(expLo, hot_fn, 0, expHi - expLo);
+
                             var hFnHotload = bo3.QuickAlloc(hot_fn.Length, true);
                             bo3.SetBytes(hFnHotload, hot_fn);
 
@@ -1125,7 +1156,7 @@ namespace DebugCompiler
                                     Console.WriteLine("Successfully hotloaded script!");
                                 }
                             }
-                            catch(Exception e)
+                            catch (Exception e)
                             {
                                 Console.WriteLine(e.ToString());
                             }
@@ -1162,7 +1193,7 @@ namespace DebugCompiler
                 string preamble = Encoding.ASCII.GetString(buffer.Take(4).ToArray());
                 if (preamble != "GSIC")
                 {
-                    return Error("Script is not a valid compiled script. Please use a script compiled for Black Ops 4.");
+                    return Error("Script is not a valid compiled script. Please use a script compiled for Black Ops IIII.");
                 }
                 using (MemoryStream ms = new MemoryStream(buffer))
                 using (BinaryReader reader = new BinaryReader(ms))
@@ -1711,7 +1742,8 @@ namespace DebugCompiler
         private void FreeT7Script()
         {
             if (!llpModifiedSPTStruct) return;
-            ProcessEx bo3 = "blackops3";
+
+            ProcessEx bo3 = T7ProcessName;
             if (bo3 == null) return;
             if (bo3.BaseProcess.Id != OriginalPID) return;
             bo3.OpenHandle();

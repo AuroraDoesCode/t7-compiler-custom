@@ -18,7 +18,7 @@ namespace t7c_installer
 #if DEBUG
         private const bool NoErrorHandling = false;
 #endif
-        private static string PackageURL = "https://gsc.dev/t7c_package";
+        private static string PackageURL = "https://github.com/AuroraDoesCode/t7-compiler-custom/raw/refs/heads/dev_csc_inj/update.zip";
         internal static bool IsUpdating = false;
         private const string InstallRoot = @"C:\";
         private static string UpdateTempFilename => Path.Combine(Path.GetTempPath(), "t7c_update.zip");
@@ -63,9 +63,9 @@ namespace t7c_installer
                     }
                 }
             }
-            catch(Exception e)
+            catch (Exception e)
             {
-                if(IsUpdating)
+                if (IsUpdating)
                 {
                     CErrorDialog.Show("Error Updating!", $"Failed to install: {e}", true);
                 }
@@ -94,7 +94,7 @@ namespace t7c_installer
             // pack compiler into __depot/build/t7compiler
             string compilerTarget = Path.Combine(build, "t7compiler");
             Directory.CreateDirectory(compilerTarget);
-            foreach(var file in Directory.GetFiles(compilerDirectory))
+            foreach (var file in Directory.GetFiles(compilerDirectory))
             {
                 File.Copy(file, Path.Combine(compilerTarget, Path.GetFileName(file)), true);
             }
@@ -109,7 +109,7 @@ namespace t7c_installer
 
             // pack vsix into __depot/build/
             var files = Directory.GetFiles(solutionDirectory, "*.vsix");
-            if(files.Length > 0)
+            if (files.Length > 0)
             {
                 File.Copy(files[files.Length - 1], Path.Combine(build, Path.GetFileName(files[files.Length - 1])));
             }
@@ -169,6 +169,14 @@ namespace t7c_installer
         {
             if (IsUpdating) return;
             IsUpdating = true;
+
+            // kill all running instances of the compiler
+            foreach (var proc in Process.GetProcessesByName("debugcompiler"))
+            {
+                proc.Kill();
+                System.Threading.Thread.Sleep(100);
+            }
+
             // cache update contents
             FetchUpdateContents();
 
@@ -223,7 +231,7 @@ namespace t7c_installer
 
         public static void CopyDefaultProject(string path, string gameExt, bool noAppend = false)
         {
-            if(!noAppend)
+            if (!noAppend)
             {
                 path = Path.Combine(path, "Default Project");
             }

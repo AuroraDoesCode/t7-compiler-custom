@@ -31,6 +31,7 @@ namespace TreyarchCompiler.Games
         private const string DEFINED_CHECK_TEMP = ".?";
         private const string UNDEFINED_COALESCE_TEMP = "??";
         private uint ScriptNamespace = 0xDEADBEEF;
+        private string StubbedScript = null;
 
         protected virtual dynamic NewScript => new T7ScriptObject(true);
         private dynamic Script;
@@ -113,19 +114,28 @@ namespace TreyarchCompiler.Games
             }
 
             var assemble_ticks = DateTime.Now.Ticks;
-            try 
-            { 
+            try
+            {
                 data.CompiledScript = Script.Serialize();
                 data.HashMap = Script.GetHashMap();
                 data.RequiresGSI = (Game == Enums.Games.T7) ? T7().UsingGSI : false;
                 data.OpcodeEmissions = T7().Header.OpcodeEmissions;
-            } catch (Exception ex) { data.Error = ex.ToString(); }
+
+                if (StubbedScript != null)
+                {
+                    data.StubbedScript = StubbedScript;
+                    T7().Header.IsStub = true;
+                    data.StubScriptData = Script.Serialize();
+                }
+
+            }
+            catch (Exception ex) { data.Error = ex.ToString(); }
             var finalticks = DateTime.Now.Ticks;
 
             //Temporary debugging stats to keep track of compiler speed
-            Console.WriteLine($"{ TimeSpan.FromTicks(finalticks - ticks).TotalMilliseconds } ms compile time (excluding irony)");
-            Console.WriteLine($" -- { TimeSpan.FromTicks(assemble_ticks - ticks).TotalMilliseconds } ms to build the structure.");
-            Console.WriteLine($" -- { TimeSpan.FromTicks(finalticks - assemble_ticks).TotalMilliseconds } ms to commit to binary.");
+            Console.WriteLine($"{TimeSpan.FromTicks(finalticks - ticks).TotalMilliseconds} ms compile time (excluding irony)");
+            Console.WriteLine($" -- {TimeSpan.FromTicks(assemble_ticks - ticks).TotalMilliseconds} ms to build the structure.");
+            Console.WriteLine($" -- {TimeSpan.FromTicks(finalticks - assemble_ticks).TotalMilliseconds} ms to commit to binary.");
             //End of temp debugging stats
 
             //data.MaskData = new Dictionary<int, byte[]> { { (int)Masks.Opcodes, GetOpCodeArray().ToByteArray(Game) } };
@@ -143,7 +153,7 @@ namespace TreyarchCompiler.Games
             if (_tree.HasErrors())
                 throw new Exception($"Syntax error in input script! [line={_tree.ParserMessages[0].Location.Line}]");
 
-            if(Game == Enums.Games.T6)
+            if (Game == Enums.Games.T6)
             {
                 Script.Name.Value = _mode == Modes.SP ? "maps/_explosive_bolt.gsc" : _mode == Modes.MP ? "maps/mp/_development_dvars.gsc" : "maps/mp/_sticky_grenade.gsc";
             }
@@ -160,11 +170,25 @@ namespace TreyarchCompiler.Games
                 foreach (var directive in _tree.Root.ChildNodes[0].ChildNodes[0].ChildNodes.OrderBy(x => x.ChildNodes[0].Term.Name.ToLower() == "functions"))
                 {
                     byte flags = (byte)0;
+                    int emit_priority = -1;
                     var FunctionFrame = directive;
                     switch (directive.ChildNodes[0].Term.Name.ToLower())
                     {
                         case "pragmastripped":
                             T7().Header.Stripped = true;
+                            break;
+                        case "pragmaprivate":
+                            T7().Header.AutoPrivate = true;
+                            break;
+                        case "pragmastub":
+                            {
+                                if (StubbedScript != null)
+                                {
+                                    throw new InvalidOperationException("Cannot declare two stub paths in the compilation batch.");
+                                }
+
+                                StubbedScript = directive.ChildNodes[0].ChildNodes[3].Token.ValueString.ToLower() + directive.ChildNodes[0].ChildNodes[4].Token.ValueString;
+                            }
                             break;
                         case "includes":
                             foreach (var node in directive.ChildNodes[0].ChildNodes)
@@ -179,7 +203,13 @@ namespace TreyarchCompiler.Games
 
                             FunctionFrame = directive.ChildNodes[0];
                             if (Game != Enums.Games.T6 && FunctionFrame.ChildNodes[0].Term.Name == "autoexec")
+                            {
                                 flags |= (byte)ExportFlags.AutoExec;
+                                if (FunctionFrame.ChildNodes[0].ChildNodes.Count > 1)
+                                {
+                                    emit_priority = (int)FunctionFrame.ChildNodes[0].ChildNodes[1].Token.Value;
+                                }
+                            }
 
                             goto functionsLabel;
 
@@ -189,7 +219,7 @@ namespace TreyarchCompiler.Games
                             var functionName = function.ChildNodes[function.ChildNodes.FindIndex(e => e.Term.Name == "identifier")].Token.ValueString.ToLower();
                             var Parameters = function.ChildNodes[function.ChildNodes.FindIndex(e => e.Term.Name == "parameters")].ChildNodes[0].ChildNodes;
 
-                            if(FunctionMetadata.ContainsKey(functionName))
+                            if (FunctionMetadata.ContainsKey(functionName))
                                 throw new ArgumentException($"Function '{functionName}' has been defined more than once.");
 
                             functionTree.Add(functionName, function);
@@ -200,7 +230,8 @@ namespace TreyarchCompiler.Games
                                 FunctionName = functionName,
                                 NamespaceName = "ilcustom",
                                 NumParams = (byte)Parameters.Count,
-                                Flags = flags
+                                Flags = flags,
+                                EmitPriority = emit_priority
                             };
 
                             break;
@@ -218,14 +249,15 @@ namespace TreyarchCompiler.Games
                                 NamespaceName = "ilcustom",
                                 NumParams = (byte)detour_parameters.Count,
                                 Flags = 0, // detours are not private
-                                IsDetour = true
+                                IsDetour = true,
+                                EmitPriority = -1
                             };
 
                             var detourPathIndex = detour.ChildNodes.FindIndex(e => e.Term.Name == "detourPath");
                             string detourFunc = detour.ChildNodes[detourPathIndex + 1].Token.ValueString.ToLower();
                             string detourNamespace = "";
                             string detourScript = null;
-                            if(detour.ChildNodes[detourPathIndex].ChildNodes[0].Term.Name == "gscForFunction")
+                            if (detour.ChildNodes[detourPathIndex].ChildNodes[0].Term.Name == "gscForFunction")
                             {
                                 detourNamespace = detour.ChildNodes[detourPathIndex].ChildNodes[0].ChildNodes[0].Token.ValueString.ToLower();
                             }
@@ -247,6 +279,11 @@ namespace TreyarchCompiler.Games
                 _currentDeclaration = item.Key;
                 EmitFunction(item.Value, item.Key);
             }
+
+            if (StubbedScript != null)
+            {
+                T7().Exports.CreateStubEntrypoint(StubbedScript, ScriptNamespace);
+            }
         }
 
         private void EmitFunction(ParseTreeNode functionNode, string FunctionName)
@@ -256,11 +293,15 @@ namespace TreyarchCompiler.Games
             dynamic CurrentFunction = CreateFunction(functionNode, FunctionName);
             CurrentFunction.Flags = FunctionMetadata[FunctionName].Flags;
             CurrentFunction.FriendlyName = FunctionName;
+            CurrentFunction.Priority = FunctionMetadata[FunctionName].EmitPriority;
 
             foreach (var paramNode in Parameters)
                 AddLocal(CurrentFunction, paramNode.FindTokenAndGetText().ToLower());
 
-            IEnumerable<string> locals = CollectLocalVariables(CurrentFunction, functionNode.ChildNodes[functionNode.ChildNodes.FindIndex(e => e.Term.Name == "block")], false);
+            var block = functionNode.ChildNodes[functionNode.ChildNodes.FindIndex(e => e.Term.Name == "block")];
+            FoldConstExprs(block);
+
+            IEnumerable<string> locals = CollectLocalVariables(CurrentFunction, block, false);
 
             foreach (var variable in locals)
                 AddLocal(CurrentFunction, variable.ToLower());
@@ -289,7 +330,10 @@ namespace TreyarchCompiler.Games
                 AddLocal(CurrentFunction, paramNode.FindTokenAndGetText().ToLower());
             }
 
-            IEnumerable<string> locals = CollectLocalVariables(CurrentFunction, functionNode.ChildNodes[functionNode.ChildNodes.FindIndex(e => e.Term.Name == "block")], false);
+            var block = functionNode.ChildNodes[functionNode.ChildNodes.FindIndex(e => e.Term.Name == "block")];
+            FoldConstExprs(block);
+
+            IEnumerable<string> locals = CollectLocalVariables(CurrentFunction, block, false);
 
             foreach (var variable in locals)
             {
@@ -297,7 +341,7 @@ namespace TreyarchCompiler.Games
             }
 
             Stack<QOperand> cached = new Stack<QOperand>();
-            while(ScriptOperands.Count > 0)
+            while (ScriptOperands.Count > 0)
             {
                 cached.Push(ScriptOperands.Pop());
             }
@@ -310,7 +354,7 @@ namespace TreyarchCompiler.Games
 
             ScriptOperands.Clear();
 
-            while(cached.Count > 0)
+            while (cached.Count > 0)
             {
                 ScriptOperands.Push(cached.Pop());
             }
@@ -489,12 +533,27 @@ namespace TreyarchCompiler.Games
                         Push(CurrentOp);
                         break;
 
+                    case "typeComparison":
+                        CurrentOp.SetOperands = EmitTypeComparitor(CurrentFunction, node, Context);
+                        Push(CurrentOp);
+                        break;
+
+                    case "typeComparisonInverted":
+                        CurrentOp.SetOperands = EmitTypeComparitor(CurrentFunction, node, Context, true);
+                        Push(CurrentOp);
+                        break;
+
+                    case "castOp":
+                        CurrentOp.SetOperands = EmitTypeConverter(CurrentFunction, node, Context);
+                        Push(CurrentOp);
+                        break;
+
                     case "include_identifier":
                     case "identifier":
                         string LocalToLower = node.Token.ValueString.ToLower();
                         if (Macros.TryGetValue(LocalToLower, out ParseTreeNode MacroNode))
                             Push(CurrentFunction, MacroNode, Context);
-                        else if(Game != Enums.Games.T6)
+                        else if (Game != Enums.Games.T6)
                             AddEvalLocal(CurrentFunction, LocalToLower, HasContext(Context, ScriptContext.IsRef), HasContext(Context, ScriptContext.Waittill));
                         break;
 
@@ -503,9 +562,9 @@ namespace TreyarchCompiler.Games
                         break;
 
                     case "hashedString":
-                        if(Game == Enums.Games.T6)
+                        if (Game == Enums.Games.T6)
                             throw new ArgumentException("Cannot hash a string for this game.");
-                        
+
                         string hashval = node.ChildNodes[1].Token.ValueString.ToLower().Replace("hash_", "");
                         try
                         {
@@ -517,12 +576,27 @@ namespace TreyarchCompiler.Games
                         }
                         break;
 
+                    case "canonHashed":
+                        if (Game == Enums.Games.T6)
+                            throw new ArgumentException("Cannot hash a string for this game.");
+
+                        CurrentFunction.AddGetHash(Script.ScriptHash(node.ChildNodes[1].Token.ValueString));
+                        break;
+
                     case "iString":
                         CurrentFunction.AddGetString(Script.Strings.AddString(node.ChildNodes[1].Token.ValueString), true);
                         break;
 
                     case "numberLiteral":
                         CurrentFunction.AddGetNumber(node.Token.Value);
+                        break;
+
+                    case "cfLabel":
+                        CurrentFunction.AddMarker(node.ChildNodes[0].Token.ValueString.ToLower());
+                        break;
+
+                    case "gotoStatement":
+                        CurrentFunction.AddLabelJump(node.ChildNodes[1].Token.ValueString.ToLower());
                         break;
 
                     case "expression+":
@@ -545,7 +619,13 @@ namespace TreyarchCompiler.Games
 
                     case "vector":
                         CurrentOp.SetOperands = EmitVector(CurrentFunction, node, Context);
-                        
+
+                        Push(CurrentOp);
+                        break;
+
+                    case "bitNegate":
+                        CurrentOp.SetOperands = EmitBitNegate(CurrentFunction, node, Context);
+
                         Push(CurrentOp);
                         break;
 
@@ -555,6 +635,12 @@ namespace TreyarchCompiler.Games
                         break;
                 }
             }
+        }
+
+        private IEnumerable<QOperand> EmitBitNegate(dynamic CurrentFunction, ParseTreeNode node, uint Context)
+        {
+            yield return new QOperand(CurrentFunction, node.ChildNodes[1], 0);
+            CurrentFunction.AddOp(DynOp(ScriptOpCode.Bit_Not));
         }
 
         private IEnumerable<QOperand> EmitVector(dynamic CurrentFunction, ParseTreeNode node, uint Context)
@@ -585,7 +671,7 @@ namespace TreyarchCompiler.Games
 
             if (NSNode != null)
             {
-                if(Game != Enums.Games.T6)
+                if (Game != Enums.Games.T6)
                     t7_ns = Script.ScriptHash(NSNode.ChildNodes[0].FindTokenAndGetText().ToLower());
             }
 
@@ -597,7 +683,7 @@ namespace TreyarchCompiler.Games
             string fname = FuncNameNode.ChildNodes[0].FindTokenAndGetText().ToLower();
             uint FunctionID = (Game != Enums.Games.T6) ? Script.ScriptHash(fname) : 0u;
 
-            if(NoRefReplace || Game != Enums.Games.T7 || !T7().IsStatPtrProtected(FunctionID) || !EnableStatPtrProtect)
+            if (NoRefReplace || Game != Enums.Games.T7 || !T7().IsStatPtrProtected(FunctionID) || !EnableStatPtrProtect)
             {
                 CurrentFunction.AddFunctionPtr(Script.Imports.AddImport(FunctionID, t7_ns, Numparams, Flags));
                 return;
@@ -620,7 +706,7 @@ namespace TreyarchCompiler.Games
 
         private void AddGetString(dynamic CurrentFunction, string Value)
         {
-            switch(Game)
+            switch (Game)
             {
                 default:
                     (CurrentFunction as T7ScriptExport).AddGetString(T7().Strings.AddString(Value));
@@ -760,7 +846,7 @@ namespace TreyarchCompiler.Games
 
         private void AddFieldVariable(dynamic CurrentFunction, string FVIdentifier, uint Context)
         {
-            switch(Game)
+            switch (Game)
             {
                 default:
                     (CurrentFunction as T7ScriptExport).AddFieldVariable(T7().ScriptHash(FVIdentifier.ToLower()), Context);
@@ -903,14 +989,14 @@ namespace TreyarchCompiler.Games
             if (Game != Enums.Games.T6 && NS_String != null)
                 t7_ns = Script.ScriptHash(NS_String);
 
-            bool isCustomBuiltin = Script.ScriptHash("compiler") == t7_ns;
+            bool isCustomBuiltin = Script.BuiltinNamespace == t7_ns;
             int paramCount = parameters.Count;
 
             if (isCustomBuiltin)
             {
                 (CurrentFunction as T7ScriptExport).AddGetNumber((int)fhash);
                 t7_ns = ScriptNamespace;
-                fhash = Script.ScriptHash("isprofilebuild");
+                fhash = Script.BuiltinExport;
                 paramCount++;
             }
 
@@ -939,15 +1025,15 @@ namespace TreyarchCompiler.Games
                     Flags |= (byte)ImportFlags.NeedsResolver;
 
                 // will work for either game
-                if (T7Import.DevFunctions.Contains(function_name) && (Game == Enums.Games.T6 || t7_ns == ScriptNamespace))
-                {
-                    // Context |= (uint)ScriptContext.IsDebug;
-                    Flags |= (byte)ImportFlags.IsDebug;
-                }
+                //if (T7Import.DevFunctions.Contains(function_name) && (Game == Enums.Games.T6 || t7_ns == ScriptNamespace))
+                //{
+                //    // Context |= (uint)ScriptContext.IsDebug;
+                //    Flags |= (byte)ImportFlags.IsDebug;
+                //}
 
                 dynamic ImportRef = null;
 
-                if(Game != Enums.Games.T6)
+                if (Game != Enums.Games.T6)
                     ImportRef = Script.Imports.AddImport(fhash, t7_ns, (byte)paramCount, Flags);
 
                 CurrentFunction.AddCall(ImportRef, Context);
@@ -1031,7 +1117,7 @@ namespace TreyarchCompiler.Games
 
         private bool IsBuiltinMethod(string identifier)
         {
-            switch(Game)
+            switch (Game)
             {
                 default:
                     return T7ScriptExport.IsBuiltinMethod(identifier);
@@ -1152,7 +1238,7 @@ namespace TreyarchCompiler.Games
                     break;
 
                 case "??=":
-                    foreach(var val in EmitUndefCoalesceExpression(CurrentFunction, node, 0, true))
+                    foreach (var val in EmitUndefCoalesceExpression(CurrentFunction, node, 0, true))
                     {
                         yield return val;
                     }
@@ -1223,7 +1309,7 @@ namespace TreyarchCompiler.Games
 
         private void ExitLoop(dynamic CurrentFunction, dynamic Header, dynamic Footer)
         {
-            switch(Game)
+            switch (Game)
             {
                 case Enums.Games.T7:
                     while (CurrentFunction.TryPopLCF(out T7OP_Jump __lcf))
@@ -1280,6 +1366,69 @@ namespace TreyarchCompiler.Games
             }
         }
 
+        private IEnumerable<QOperand> EmitTypeConverter(dynamic CurrentFunction, ParseTreeNode node, uint Context)
+        {
+            string swval = node.ChildNodes[2].ChildNodes[0].Token.Value.ToString();
+            switch (swval)
+            {
+                case "int":
+                case "float":
+                case "istring":
+                    CurrentFunction.AddOp(DynOp(ScriptOpCode.PreScriptCall));
+                    yield return new QOperand(CurrentFunction, node.ChildNodes[0], 0);
+                    CurrentFunction.AddCall(Script.Imports.AddImport(Script.ScriptHash($"{swval}"), ScriptNamespace, (byte)1, (byte)ImportFlags.IsFunction | (byte)ImportFlags.NeedsResolver), Context);
+                    break;
+
+                default:
+                    throw new NotFiniteNumberException($"Compiler failure: {swval} is not implemented for 'as' operator.");
+            }
+        }
+
+        private IEnumerable<QOperand> EmitTypeComparitor(dynamic CurrentFunction, ParseTreeNode node, uint Context, bool inverted = false)
+        {
+            int offset = inverted ? 1 : 0;
+            string swval = node.ChildNodes[2 + offset].ChildNodes.Count > 0 ? node.ChildNodes[2 + offset].ChildNodes[0].Token.Value.ToString() : "functionptr";
+
+            switch (swval)
+            {
+                case "true":
+                case "false":
+                    yield return new QOperand(CurrentFunction, node.ChildNodes[0], 0);
+                    (CurrentFunction as T7ScriptExport).AddGetNumber((int)("true" == swval ? 1 : 0));
+                    CurrentFunction.AddOp(DynOp(ScriptOpCode.SuperEqual));
+                    break;
+
+                case "undefined":
+                case "defined":
+                    yield return new QOperand(CurrentFunction, node.ChildNodes[0], 0);
+                    CurrentFunction.AddOp(DynOp(ScriptOpCode.IsDefined));
+                    if (swval == "undefined")
+                    {
+                        CurrentFunction.AddOp(DynOp(ScriptOpCode.BoolNot));
+                    }
+                    break;
+
+                case "float":
+                case "functionptr":
+                case "string":
+                case "array":
+                case "vec":
+                case "int":
+                    CurrentFunction.AddOp(DynOp(ScriptOpCode.PreScriptCall));
+                    yield return new QOperand(CurrentFunction, node.ChildNodes[0], 0);
+                    CurrentFunction.AddCall(Script.Imports.AddImport(Script.ScriptHash($"is{swval}"), ScriptNamespace, (byte)1, (byte)ImportFlags.IsFunction | (byte)ImportFlags.NeedsResolver), Context);
+                    break;
+
+                default:
+                    throw new NotFiniteNumberException($"Compiler failure: {swval} is not implemented for 'is' operator.");
+            }
+
+            if (inverted)
+            {
+                CurrentFunction.AddOp(DynOp(ScriptOpCode.BoolNot));
+            }
+        }
+
         private IEnumerable<QOperand> EmitBoolExpr(dynamic CurrentFunction, ParseTreeNode node, uint Context)
         {
             switch (node.ChildNodes.Count)
@@ -1294,11 +1443,11 @@ namespace TreyarchCompiler.Games
                 case 3:
 
                     yield return new QOperand(CurrentFunction, node.ChildNodes[0], 0);
-                    if(node.ChildNodes[1].Term.Name[0] == '?')
+                    if (node.ChildNodes[1].Term.Name[0] == '?')
                     {
                         CurrentFunction.AddOp(DynOp(ScriptOpCode.IsDefined));
                     }
-                    dynamic target = node.ChildNodes[1].Term.Name[1] == '&' ? DynOp(ScriptOpCode.JumpOnFalseExpr) : DynOp(ScriptOpCode.JumpOnTrueExpr);
+                    dynamic target = (node.ChildNodes[1].Term.Name[1] == '&' || node.ChildNodes[1].Term.Name[1] == 'n') ? DynOp(ScriptOpCode.JumpOnFalseExpr) : DynOp(ScriptOpCode.JumpOnTrueExpr);
                     dynamic __jmp = CurrentFunction.AddJump(target);
                     yield return new QOperand(CurrentFunction, node.ChildNodes[2], 0);
                     __jmp.After = CurrentFunction.Locals.GetEndOfChain();
@@ -1368,7 +1517,7 @@ namespace TreyarchCompiler.Games
 
         private dynamic DynOp(dynamic opcode)
         {
-            switch(Game)
+            switch (Game)
             {
                 default:
                     return (T7CompilerLib.OpCodes.ScriptOpCode)opcode;
@@ -1377,7 +1526,7 @@ namespace TreyarchCompiler.Games
 
         private void AddEvalLocal(dynamic CurrentFunction, string pname, bool IsRef, bool HasWaittillContext = false)
         {
-            switch(Game)
+            switch (Game)
             {
                 default:
                     uint phash = Script.ScriptHash(pname);
@@ -1458,7 +1607,7 @@ namespace TreyarchCompiler.Games
 
         private void AddLocal(dynamic CurrentFunction, string LocalName)
         {
-            switch(Game)
+            switch (Game)
             {
                 default:
                     (CurrentFunction as T7ScriptExport).Locals.AddLocal(T7().ScriptHash(LocalName));
@@ -1468,7 +1617,7 @@ namespace TreyarchCompiler.Games
 
         private dynamic CreateFunction(ParseTreeNode functionNode, string FunctionName)
         {
-            switch(Game)
+            switch (Game)
             {
                 default:
                     return T7().Exports.Add(FunctionMetadata[FunctionName].FunctionHash,
@@ -1513,7 +1662,7 @@ namespace TreyarchCompiler.Games
         {
             if (Game == Enums.Games.T8)
                 return new short[0];
-            
+
             var randomizer = new List<short>();
             foreach (var entry in Script.Header.OpcodeValues)
             {
@@ -1550,6 +1699,30 @@ namespace TreyarchCompiler.Games
             return data;
         }
 
+        private void FoldConstExprs(ParseTreeNode node)
+        {
+            // TODO: fold const bool expressions and automatically destroy any if/while statements we see with const expr
+            //  if(true) { ... } => { ... }
+            //  if(false) { ... } => { }
+            //  if(false) { ...1 } else { ...2 } => { ...2 }
+            //  while(true) { ... } => for(;;) { ... }
+            //  while(false) { ... } => { }
+            //  false && b => false
+            //  true || b => true
+            //  true ? a : b => a
+            //  false ? a : b => b
+            //  !const => const
+
+            // TODO: automatically replace macro refs with their respective value
+            // TODO: const math expressions
+            // const op const => const
+
+            // TODO: identify guaranteed branching
+            //  { ...1 branch; ...2 } => { ...1 branch; } where branch => continue, return, break
+
+            // so general idea is: if a tree has non const data in it, we cant simplify (isnt always true, see short circuit). otherwise, simplify bottom to top
+        }
+
         private struct ScriptFunctionMetaData
         {
             public uint FunctionHash;
@@ -1559,6 +1732,7 @@ namespace TreyarchCompiler.Games
             public byte NumParams;
             public byte Flags;
             public bool IsDetour;
+            public int EmitPriority;
         }
 
         private class QOperand

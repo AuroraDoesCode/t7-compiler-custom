@@ -41,10 +41,10 @@ namespace TreyarchCompiler.Games
             FunctionMetadata = new Dictionary<string, ScriptFunctionMetaData>();
         }
 
-        public CompiledCode Compile()
+        public CompiledCodeT8 Compile()
         {
             var ticks = DateTime.Now.Ticks;
-            var data = new CompiledCode();
+            var data = new CompiledCodeT8();
             try { CompileTree(); }
             catch (Exception ex)
             {
@@ -66,11 +66,6 @@ namespace TreyarchCompiler.Games
             Console.WriteLine($" -- { TimeSpan.FromTicks(finalticks - assemble_ticks).TotalMilliseconds } ms to commit to binary.");
             //End of temp debugging stats
             return data;
-        }
-
-        public CompiledCode Compile(string address)
-        {
-            throw new NotImplementedException();
         }
 
         private byte GetAutoExecByVM()
@@ -1310,6 +1305,16 @@ namespace TreyarchCompiler.Games
         private bool HasContext(uint context, ScriptContext desired)
         {
             return (context & (uint)desired) > 0;
+        }
+
+        CompiledCode ICompiler.Compile()
+        {
+            throw new NotImplementedException();
+        }
+
+        CompiledCode ICompiler.Compile(string address)
+        {
+            throw new NotImplementedException();
         }
     }
 }

@@ -1,7 +1,16 @@
 ﻿using Irony.Parsing;
 
 //From Serious: Never again :)
+// TODO: struct shorthand, varargs, byref, constexpr
+/*
+ *  WIP
+    pragma lazystrings: until turned off, all linked functions will emit lazygetstring references; any strings that are not already in the table will be linked just in time. this should reduce the sl string overhead for per-map functionality in unified scripts.
+                        - Additional linking section appended to bottom of gsc.
+                        - getlazystring will point to the link entry for it, where sl_getstring will be called and all references to this string will be fixed up, at which point the opcode will act as regular getstring
 
+
+
+ */
 namespace TreyarchCompiler
 {
     [Language("Game Script", "Shared 4.0", "GSC Grammar For Call of Duty, Created By: Bog && Serious")]
@@ -44,6 +53,9 @@ namespace TreyarchCompiler
         protected NonTerminal functionDetour { private set; get; }
         protected NonTerminal detourPath { private set; get; }
         protected NonTerminal pragmaStripped { private set; get; }
+        protected NonTerminal pragmaLazyStrings { private set; get; }
+        protected NonTerminal pragmaPrivate { private set; get; }
+        protected NonTerminal pragmaStub { private set; get; }
         #endregion
 
         #region Boolean
@@ -75,6 +87,9 @@ namespace TreyarchCompiler
         protected NonTerminal vector { private set; get; }
         protected NonTerminal size { private set; get; }
         protected NonTerminal shortHandArray { private set; get; }
+        protected NonTerminal comparitorType { private set; get; }
+        protected NonTerminal castType { private set; get; }
+        protected NonTerminal bitNegate { private set; get; }
         #endregion
 
         #region Calls
@@ -141,6 +156,8 @@ namespace TreyarchCompiler
         protected NonTerminal foreachSingle { private set; get; }
         protected NonTerminal foreachDouble { private set; get; }
         protected NonTerminal jumpStatement { private set; get; }
+        protected NonTerminal cfLabel { private set; get; }
+        protected NonTerminal gotoStatement { private set; get; }
         #endregion
 
         #endregion
@@ -152,6 +169,7 @@ namespace TreyarchCompiler
         protected virtual NonTerminal NameSpaceDirective => new NonTerminal("namespace", Unsupported);
         protected virtual NonTerminal verbatimString => new NonTerminal("verbatimString", ToTerm("@") + StringLiteral);
         protected virtual NonTerminal hashedString => new NonTerminal("hashedString", Unsupported);
+        protected virtual NonTerminal canonHashed => new NonTerminal("canonHashed", Unsupported);
         protected virtual NonTerminal iString => new NonTerminal("iString", ToTerm("&") + StringLiteral);
         protected virtual NonTerminal usingTree => new NonTerminal("usingTree", Unsupported);
         protected virtual NonTerminal animTree => new NonTerminal("animTree", Unsupported);
@@ -172,6 +190,7 @@ namespace TreyarchCompiler
 
             Identifier = new IdentifierTerminal("identifier", @"_\", "_");
             StringLiteral = new StringLiteral("stringLiteral", "\"", StringOptions.AllowsAllEscapes);
+            var StringLiteralMultiline = new StringLiteral("stringLiteral", "$", StringOptions.NoEscapes | StringOptions.AllowsLineBreak);
 
             //Comments
             NonGrammarTerminals.Add(new CommentTerminal("dev-comment", "/#", "#/"));
@@ -188,8 +207,8 @@ namespace TreyarchCompiler
             MarkPunctuation("(", ")", "{", "}", "[", "]", ",", ".", ";", "::", "[[", "]]", "@", "#define", "#include", "#using_animtree", "->", "?.", "function");
 
             //Operators
-            RegisterOperators(1, "||", "?|");
-            RegisterOperators(2, "&&", "?&");
+            RegisterOperators(1, "||", "?|", "or");
+            RegisterOperators(2, "&&", "?&", "and");
             RegisterOperators(3, "|");
             RegisterOperators(4, "^");
             RegisterOperators(5, "&");
@@ -198,6 +217,7 @@ namespace TreyarchCompiler
             RegisterOperators(8, "+", "-");
             RegisterOperators(9, "*", "/", "%");
             RegisterOperators(10, "??");
+            RegisterOperators(11, "~");
 
             #endregion
 
@@ -206,16 +226,21 @@ namespace TreyarchCompiler
             #region Directives
             //Master Directive Rules
             directives.Rule = MakeStarRule(directives, null, directive);
-            directive.Rule = Empty | Overrides | includes | globals | FunctionFrame | NameSpaceDirective | usingTree | functionDetour | pragmaStripped;
+            directive.Rule = Empty | Overrides | includes | globals | FunctionFrame | NameSpaceDirective | usingTree | functionDetour | pragmaStripped | pragmaLazyStrings | pragmaPrivate | pragmaStub;
 
             //Includes
-            includes.Rule = ToTerm("#include") + IncludeIdentifier + ";" | 
+            includes.Rule = ToTerm("#include") + IncludeIdentifier + ";" |
                             ToTerm("#using") + IncludeIdentifier + ";";
 
-            pragmaStripped.Rule = ToTerm("#pragma") + ToTerm("stripped") + ";";
+            pragmaStub.Rule = ToTerm("#pragma") + ToTerm("stub", "identifier") + "<" + Identifier + ".gsc" + ">" + ";" |
+                              ToTerm("#pragma") + ToTerm("stub", "identifier") + "<" + Identifier + ".csc" + ">" + ";";
+            pragmaStripped.Rule = ToTerm("#pragma") + ToTerm("stripped", "identifier") + ";";
+            pragmaLazyStrings.Rule = ToTerm("#pragma") + ToTerm("lazystrings", "identifier") + "(" + ToTerm("on", "identifier") + ")" | ToTerm("#pragma") + ToTerm("lazy_strings", "identifier") + "(" + ToTerm("off", "identifier") + ")";
+            pragmaPrivate.Rule = ToTerm("#pragma") + ToTerm("private", "identifier") + ";"; // default to private exports
+
 
             //Globals
-            globals.Rule = ToTerm("#define") + Identifier + equalOperator + new NonTerminal("expr", (NumberLiteral | vector | iString | StringLiteral | booleanExpression | newArray)) + ";";
+            globals.Rule = ToTerm("#define") + Identifier + equalOperator + new NonTerminal("expr", (NumberLiteral | vector | iString | StringLiteral | StringLiteralMultiline | booleanExpression | newArray)) + ";";
 
             //Functions
             functions.Rule = Identifier + parameters + block;
@@ -227,14 +252,16 @@ namespace TreyarchCompiler
             #region Boolean
             //Master Boolean Rules
             booleanExpression.Rule = boolExprOperand | booleanAndExpression | booleanOrExpression;
-            booleanAndExpression.Rule = booleanExpression + ToTerm("&&") + booleanExpression | 
-                                        booleanExpression + ToTerm("?&") + booleanExpression;
+            booleanAndExpression.Rule = booleanExpression + ToTerm("&&") + booleanExpression |
+                                        booleanExpression + ToTerm("?&") + booleanExpression |
+                                        booleanExpression + ToTerm("and") + booleanExpression;
             booleanOrExpression.Rule = blorOp + ToTerm("||") + blorOp |
                                        blorOp + ToTerm("?|") + blorOp |
                                        booleanExpression + ToTerm("||") + booleanExpression |
-                                       booleanExpression + ToTerm("?|") + booleanExpression;
-            boolNot.Rule = ToTerm("!") + boolNotOperand;
-            
+                                       booleanExpression + ToTerm("?|") + booleanExpression |
+                                       booleanExpression + ToTerm("or") + booleanExpression;
+            boolNot.Rule = ToTerm("!") + boolNotOperand | ToTerm("not") + boolNotOperand;
+
 
             //Parenthesis
             parenBooleanExpression.Rule = "(" + booleanExpression + ")";
@@ -247,19 +274,24 @@ namespace TreyarchCompiler
 
             //Conditional
             conditionalStatement.Rule = booleanExpression + ToTerm("?") + booleanExpression + ToTerm(":") + booleanExpression;
-            
+            comparitorType.Rule = ToTerm("int", "identifier") | ToTerm("float", "identifier") | ToTerm("vec", "identifier") | ToTerm("undefined", "identifier") | ToTerm("defined", "identifier") | ToTerm("string", "identifier") | ToTerm("array", "identifier") | ToTerm("function", "identifier") | ToTerm("true", "identifier") | ToTerm("false", "identifier");
+            castType.Rule = ToTerm("int", "identifier") | ToTerm("float", "identifier") | ToTerm("istring", "identifier");
+
             //Boolean Operand
-            boolOperand.Rule =  new NonTerminal("undefined_coalesce", boolExprOperand + ToTerm("??") + boolExprOperand) |
+            boolOperand.Rule = new NonTerminal("undefined_coalesce", boolExprOperand + ToTerm("??") + boolExprOperand) |
                                 new NonTerminal("pemdas", expression) |
                                 new NonTerminal("relationalExpression", boolExprOperand + relationalOperator + boolExprOperand) |
                                 new NonTerminal("relationalExpression", boolExprOperand + equalityOperator + boolExprOperand) |
-                                conditionalStatement;
+                                conditionalStatement |
+                                new NonTerminal("typeComparison", boolExprOperand + ToTerm("is") + comparitorType) |
+                                new NonTerminal("typeComparisonInverted", boolExprOperand + ToTerm("is") + ToTerm("not") + comparitorType) |
+                                new NonTerminal("castOp", boolExprOperand + ToTerm("as") + castType);
             #endregion
 
             #region Expressions
             //Master Expresssion Rules
             expr.Rule = parenExpr | mathExpr | animRef | animTree | boolNot;
-            mathExpr.Rule = parenMathExpr | variableExpr | StringLiteral | NumberLiteral | newArray | size | iString | hashedString | vector;
+            mathExpr.Rule = parenMathExpr | variableExpr | StringLiteral | StringLiteralMultiline | NumberLiteral | newArray | size | iString | hashedString | canonHashed | vector | bitNegate;
             variableExpr.Rule = parenVariableExpr | directAccess | definedAccess | call | Identifier | getFunction | localFunction | lazyFunction | array;
 
             //Parenthesis
@@ -271,8 +303,9 @@ namespace TreyarchCompiler
             directAccess.Rule = variableExpr + "." + Identifier;
             definedAccess.Rule = variableExpr + "?." + Identifier;
             setVariableFieldExpr.Rule = parenVariableFieldExpr | booleanExpression | newArray | shortHandArray;
-            array.Rule = variableExpr + "[" + booleanExpression + "]" | StringLiteral + "[" + booleanExpression + "]";
-            size.Rule = variableExpr + ".size" | StringLiteral + ".size";
+            array.Rule = variableExpr + "[" + booleanExpression + "]" | StringLiteral + "[" + booleanExpression + "]" | StringLiteralMultiline + "[" + booleanExpression + "]";
+            size.Rule = variableExpr + ".size" | StringLiteral + ".size" | StringLiteralMultiline + ".size";
+            bitNegate.Rule = ToTerm("~") + boolNotOperand;
             vector.Rule = "(" + booleanExpression + "," + booleanExpression + "," + booleanExpression + ")";
             shortHandArray.Rule = "[" + callParameters + "]";
             #endregion
@@ -318,7 +351,7 @@ namespace TreyarchCompiler
             //Master Parameter Rules
             parameters.Rule = "(" + optionalParameters + ")" | "(" + ")";
             optionalParameters.Rule = MakeStarRule(optionalParameters, ToTerm(","), parameterExpr) | parameterExpr;
-            
+
             //Parameter Rules
             parameterExpr.Rule = Identifier | setOptionalParam;
             setOptionalParam.Rule = Identifier + equalOperator + optionalExpr;
@@ -340,7 +373,7 @@ namespace TreyarchCompiler
             #region Declarations
             //Declaration Master Rules
             declarations.Rule = MakePlusRule(declarations, declaration);
-            declaration.Rule = _return | simpleCall | statement | setVariableField | wait | waittillframeend | jumpStatement;
+            declaration.Rule = _return | simpleCall | statement | setVariableField | wait | waittillframeend | jumpStatement | gotoStatement | cfLabel;
 
             //Statement Master Rule
             statement.Rule = ifStatement | whileStatement | forStatement | switchStatement | foreachStatement;
@@ -349,6 +382,8 @@ namespace TreyarchCompiler
             //Declarations
             simpleCall.Rule = call + ";";
             _return.Rule = ToTerm("return") + booleanExpression + ";" | ToTerm("return") + newArray + ";" | ToTerm("return") + ";";
+            cfLabel.Rule = Identifier + ":";
+            gotoStatement.Rule = ToTerm("goto") + Identifier + ";";
 
             //Parenthesis
             parenWaitExpr.Rule = "(" + waitExpr + ")";
@@ -359,8 +394,8 @@ namespace TreyarchCompiler
             waittillframeend.Rule = ToTerm("waittillframeend") + ";";
 
             //Set Variable Field
-            setVariableField.Rule = variableExpr + shortExprOperator + booleanExpression + ";" | 
-                                    variableExpr + equalOperator + setVariableFieldExpr + ";"  | 
+            setVariableField.Rule = variableExpr + shortExprOperator + booleanExpression + ";" |
+                                    variableExpr + equalOperator + setVariableFieldExpr + ";" |
                                     variableExpr + incDecOperator + ";";
             #endregion
 
@@ -397,7 +432,7 @@ namespace TreyarchCompiler
 
             MarkTransient
                 (
-                    boolNotOperand, 
+                    boolNotOperand,
                     boolOperand,
                     parenExpr,
                     parenMathExpr,
@@ -493,6 +528,14 @@ namespace TreyarchCompiler
             functionDetour = new NonTerminal("functionDetour");
             detourPath = new NonTerminal("detourPath");
             pragmaStripped = new NonTerminal("pragmaStripped");
+            comparitorType = new NonTerminal("comparitorType");
+            castType = new NonTerminal("castType");
+            pragmaLazyStrings = new NonTerminal("pragmaLazyStrings");
+            pragmaPrivate = new NonTerminal("pragmaPrivate");
+            pragmaStub = new NonTerminal("pragmaStub");
+            bitNegate = new NonTerminal("bitNegate");
+            cfLabel = new NonTerminal("cfLabel");
+            gotoStatement = new NonTerminal("gotoStatement");
             Root = new NonTerminal("program") { Rule = directives };
         }
     }

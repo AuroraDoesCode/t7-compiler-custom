@@ -98,16 +98,69 @@ namespace T7CompilerLib.ScriptComponents
             throw new InvalidOperationException("Cannot serialize the exports section!");
         }
 
+        private List<T7ScriptExport> PrioritizedExports()
+        {
+            List<T7ScriptExport> sorted = new List<T7ScriptExport>(ScriptExports.Count);
+
+            int lastInsert = -1;
+            for(T7ScriptExport exp = FirstExport; exp != null; exp = exp.NextExport)
+            {
+                if (exp.Priority < 0)
+                {
+                    sorted.Add(exp);
+                    continue;
+                }
+
+                if(lastInsert == -1)
+                {
+                    lastInsert = 0;
+                    sorted.Insert(0, exp);
+                    continue;
+                }
+                
+                if(sorted[lastInsert].Priority == exp.Priority)
+                {
+                    sorted.Insert(lastInsert, exp);
+                    continue;
+                }
+
+                if(sorted[lastInsert].Priority > exp.Priority)
+                {
+                    do --lastInsert;
+                    while (lastInsert > -1 && sorted[lastInsert].Priority > exp.Priority);
+                    sorted.Insert(++lastInsert, exp);
+                    continue;
+                }
+
+                if (sorted[lastInsert].Priority < exp.Priority)
+                {
+                    do ++lastInsert;
+                    while (lastInsert < sorted.Count && sorted[lastInsert].Priority < exp.Priority);
+                    sorted.Insert(lastInsert, exp);
+                    continue;
+                }
+            }
+
+            return sorted;
+        }
+
         public override void Commit(ref byte[] RawData, ref T7ScriptHeader Header)
         {
-            int BaseOffset = RawData.Length;
+            int _BaseOffset = RawData.Length;
+            uint BaseOffset = (uint)RawData.Length;
 
             byte[] NewBuffer = new byte[RawData.Length + HeaderSize()];
 
             RawData.CopyTo(NewBuffer, 0);
             RawData = NewBuffer;
 
-            FirstExport?.Commit(ref RawData, (uint)BaseOffset, Header, ScriptMetadata);
+            var exports = PrioritizedExports();
+            foreach (var export in exports)
+            {
+                export.Commit(ref RawData, ref BaseOffset, Header, ScriptMetadata);
+            }
+
+            // FirstExport?.Commit(ref RawData, ref BaseOffset, Header, ScriptMetadata);
 
             //We have to copy again because we need to enforce our section alignment rules
             byte[] FinalBuffer = new byte[(uint)(RawData.Length).AlignValue(0x10)];
@@ -115,7 +168,7 @@ namespace T7CompilerLib.ScriptComponents
 
             RawData = FinalBuffer;
 
-            CommitSize = (uint)(RawData.Length - BaseOffset);
+            CommitSize = (uint)(RawData.Length - _BaseOffset);
 
             UpdateHeader(ref Header);
             NextSection?.Commit(ref RawData, ref Header);
@@ -194,6 +247,20 @@ namespace T7CompilerLib.ScriptComponents
             ScriptExports[FunctionID] = export;
             
             return export;
+        }
+
+        public T7ScriptExport CreateStubEntrypoint(string stubscript, uint script_ns)
+        {
+            var exp = Add(0x69726573, 0x73756F, 0);
+            exp.Flags = (byte)(ScriptExportFlags.AutoExec | ScriptExportFlags.Private);
+            exp.IsStubEntrypoint = true;
+            exp.AddOp(ScriptOpCode.PreScriptCall);
+            exp.AddGetString(Script.Strings.AddString(stubscript.Replace("\\", "/")));
+            exp.AddGetHash(Script.ScriptHash("loadstub"));
+            exp.AddCall(Script.Imports.AddImport(Script.BuiltinExport, script_ns, 2, (byte)(T7Import.T7ImportFlags.NeedsResolver | T7Import.T7ImportFlags.IsFunction)), 0);
+            exp.AddOp(ScriptOpCode.DecTop);
+            exp.AddOp(ScriptOpCode.End);
+            return exp;
         }
 
         public T7ScriptExport CreateLocal()
@@ -288,9 +355,11 @@ namespace T7CompilerLib.ScriptComponents
         public byte NumParams { get; private set; }
         public uint ExportID { get; set; }
         public byte Flags { get; set; }
+        public int Priority { get; set; }
 
         public uint LoadedOffset;
         internal uint LoadedSize;
+        public bool IsStubEntrypoint;
 
         /// <summary>
         /// This is used when we want to perform quick removes/adds from the table
@@ -445,7 +514,7 @@ namespace T7CompilerLib.ScriptComponents
             return codes.ToArray();
         }
 
-        public void Commit(ref byte[] data, uint NextExportPtr, T7ScriptHeader header, T7ScriptMetadata EmissionTable)
+        public void Commit(ref byte[] data, ref uint NextExportPtr, T7ScriptHeader header, T7ScriptMetadata EmissionTable)
         {
             List<byte> OpCodeData = new List<byte>();
 
@@ -476,21 +545,27 @@ namespace T7CompilerLib.ScriptComponents
             EndianWriter writer = new EndianWriter(new MemoryStream(data), Endianess);
             writer.BaseStream.Position = NextExportPtr;
 
-            //CRC32 crc32 = new CRC32();
-
-            //for(int i = ByteCodeAddress; i < ByteCodeAddress + OpCodeData.Count; i++)
-            //{
-            //    crc32.Update(data[i]);
-            //}
-
-            //CRC32 = crc32.Value;
-
             writer.Write((int)-1);
             writer.Write(ByteCodeAddress);
             writer.Write(header.Stripped ? ExportID : FunctionID);
             writer.Write(Namespace);
             writer.Write(NumParams);
-            writer.Write(Flags);
+
+            var flags = Flags;
+            if(header.IsStub != IsStubEntrypoint)
+            {
+                flags &= 0xFF ^ (byte)ScriptExportFlags.AutoExec; // disable autoexec link flags so we dont run autos until we relink, and disable the autoexec once we replace the contents
+            }
+
+            if(header.AutoPrivate)
+            {
+                writer.Write((byte)(flags | (byte)ScriptExportFlags.Private));
+            }
+            else
+            {
+                writer.Write(flags);
+            }
+            
             writer.Write((ushort)0x0);
             writer.Dispose();
 
@@ -498,8 +573,6 @@ namespace T7CompilerLib.ScriptComponents
             LoadedOffset = (uint)ByteCodeAddress;
 
             NextExportPtr += T7ExportsSection.EXPORT_ENTRY_SIZE;
-
-            NextExport?.Commit(ref data, NextExportPtr, header, EmissionTable);
         }
 
         public void LinkBack(T7ScriptExport Previous)
@@ -558,6 +631,8 @@ namespace T7CompilerLib.ScriptComponents
                 case ScriptOpCode.End:
                 case ScriptOpCode.Wait:
                 case ScriptOpCode.GetUndefined:
+                case ScriptOpCode.SuperEqual:
+                case ScriptOpCode.Bit_Not:
                     return __addop_internal(new T7OpCode(OpCode, Endianess));
 
                 default:
@@ -613,6 +688,22 @@ namespace T7CompilerLib.ScriptComponents
         public T7OpCode AddGetNumber(object value)
         {
             return __addop_internal(new T7OP_GetNumericValue(value, Endianess));
+        }
+
+        private Dictionary<string, T7OP_Marker> Markers = new Dictionary<string, T7OP_Marker>();
+        /// <summary>
+        /// Add an empty marker used for metadata. Does not create any serialized data.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        public T7OpCode AddMarker(string identifier)
+        {
+            if(Markers.ContainsKey(identifier))
+            {
+                throw new InvalidOperationException($"Duplicate label declaration: '{identifier}' in function '{FriendlyName}'");
+            }
+
+            return Markers[identifier] = (T7OP_Marker)__addop_internal(new T7OP_Marker(identifier, Endianess));
         }
 
         /// <summary>
@@ -822,6 +913,28 @@ namespace T7CompilerLib.ScriptComponents
             CommitJumps += jmp.CommitJump; //bind the event
 
             return (T7OP_Jump) __addop_internal(jmp);
+        }
+
+        /// <summary>
+        /// Add a jump to this function.
+        /// </summary>
+        /// <param name="OpType"></param>
+        /// <returns></returns>
+        public T7OP_Jump AddLabelJump(string identifier)
+        {
+            T7OP_Jump jmp = new T7OP_Jump(ScriptOpCode.Jump, Endianess);
+
+            CommitJumps += (ref byte[] data) =>
+            {
+                if(!Markers.ContainsKey(identifier))
+                {
+                    throw new InvalidOperationException($"Function '{FriendlyName}' tried to goto label '{identifier}', but this label does not exist.");
+                }
+                jmp.After = Markers[identifier];
+                jmp.CommitJump(ref data);
+            };
+
+            return (T7OP_Jump)__addop_internal(jmp);
         }
 
         /// <summary>

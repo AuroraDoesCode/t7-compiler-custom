@@ -91,7 +91,6 @@ namespace TreyarchCompiler
         protected NonTerminal baseCallPointer { private set; get; }
         protected NonTerminal gscForFunction { private set; get; }
         protected NonTerminal getFunction { private set; get; }
-        protected NonTerminal lazyFunction { private set; get; }
         protected NonTerminal callParameters { private set; get; }
         protected NonTerminal parenCallParameters { private set; get; }
         #endregion
@@ -103,6 +102,7 @@ namespace TreyarchCompiler
         protected NonTerminal shortExprOperator { private set; get; }
         protected NonTerminal incDecOperator { private set; get; }
         protected NonTerminal equalityOperator { private set; get; }
+        protected NonTerminal bitNegate { private set; get; }
         #endregion
 
         #region Functions
@@ -153,17 +153,9 @@ namespace TreyarchCompiler
 
         #region Virtual
         protected virtual IdentifierTerminal IncludeIdentifier => new IdentifierTerminal("include_identifier", @"_/\", "_");
-        protected virtual NonTerminal FunctionFrame => new NonTerminal("functionFrame",
-            (ToTerm("autoexec") + functions)
-            | (ToTerm("event_handler") + "[" + Identifier + "]" + functions)
-            | functions
-            | (ToTerm("function") + ToTerm("autoexec") + functions)
-            | (ToTerm("function") + ToTerm("event_handler") + "[" + Identifier + "]" + functions)
-            | (ToTerm("function") + functions)
-        );
+        protected virtual NonTerminal FunctionFrame => new NonTerminal("functionFrame", ToTerm("autoexec", "autoexec") + functions | functions);
         protected virtual NonTerminal Overrides => new NonTerminal("overrides", Unsupported);
         protected virtual NonTerminal NameSpaceDirective => new NonTerminal("namespace", "#namespace" + Identifier + ";");
-        protected virtual NonTerminal RequiresImplementsDirective => new NonTerminal("requiresimplements", "#requiresimplements" + StringLiteral + ";");
         protected virtual NonTerminal verbatimString => new NonTerminal("Unsupported", Unsupported);
         protected virtual NonTerminal hashedString => new NonTerminal("hashedString", ToTerm("#") + StringLiteral);
         protected virtual NonTerminal hashedVariable => new NonTerminal("hashedVariable", ToTerm("#") + Identifier);
@@ -212,6 +204,7 @@ namespace TreyarchCompiler
             RegisterOperators(7, "<", ">", "<=", ">=");
             RegisterOperators(8, "+", "-");
             RegisterOperators(9, "*", "/", "%");
+            RegisterOperators(10, "~");
 
             #endregion
 
@@ -220,16 +213,16 @@ namespace TreyarchCompiler
             #region Directives
             //Master Directive Rules
             directives.Rule = MakeStarRule(directives, null, directive);
-            directive.Rule = Empty | Overrides | includes | globals | FunctionFrame | NameSpaceDirective | RequiresImplementsDirective | usingTree | functionDetour;
+            directive.Rule = Empty | Overrides | includes | globals | FunctionFrame | NameSpaceDirective | usingTree | functionDetour;
 
             //Includes
-            includes.Rule = ToTerm("#include") + IncludeIdentifier + includeExtension.Q() + ";" | 
+            includes.Rule = ToTerm("#include") + IncludeIdentifier + includeExtension.Q() + ";" |
                             ToTerm("#using") + IncludeIdentifier + includeExtension.Q() + ";";
             includeExtension.Rule = ToTerm(".csc") | ToTerm(".gsc");
 
             //Globals
             globals.Rule = ToTerm("#define") + Identifier + equalOperator + new NonTerminal("expr", (NumberLiteral | vector | verbatimString | iString | StringLiteral | booleanExpression | newArray)) + ";";
-            
+
             //Functions
             functions.Rule = Identifier + parameters + block |
                              Identifier + equalOperator + parameters + "=>" + new NonTerminal("block", declaration) |
@@ -245,7 +238,7 @@ namespace TreyarchCompiler
             booleanAndExpression.Rule = booleanExpression + ToTerm("&&") + booleanExpression;
             booleanOrExpression.Rule = blorOp + ToTerm("||") + blorOp | booleanExpression + ToTerm("||") + booleanExpression;
             boolNot.Rule = ToTerm("!") + boolNotOperand;
-            
+
 
             //Parenthesis
             parenBooleanExpression.Rule = "(" + booleanExpression + ")";
@@ -258,9 +251,9 @@ namespace TreyarchCompiler
 
             //Conditional
             conditionalStatement.Rule = booleanExpression + ToTerm("?") + booleanExpression + ToTerm(":") + booleanExpression;
-            
+
             //Boolean Operand
-            boolOperand.Rule =  new NonTerminal("pemdas", expression) |
+            boolOperand.Rule = new NonTerminal("pemdas", expression) |
                                 new NonTerminal("relationalExpression", boolExprOperand + relationalOperator + boolExprOperand) |
                                 new NonTerminal("relationalExpression", boolExprOperand + equalityOperator + boolExprOperand) |
                                 conditionalStatement;
@@ -269,8 +262,8 @@ namespace TreyarchCompiler
             #region Expressions
             //Master Expresssion Rules
             expr.Rule = parenExpr | mathExpr | animRef | animTree | newArray | shortHandArray | shortHandStruct | boolNot;
-            mathExpr.Rule = parenMathExpr | variableExpr | StringLiteral | NumberLiteral | verbatimString | size | iString | hashedString | hashedVariable | vector;
-            variableExpr.Rule = parenVariableExpr | directAccess | stackAccess | call | classCall | Identifier | getFunction | lazyFunction | array;
+            mathExpr.Rule = parenMathExpr | variableExpr | StringLiteral | NumberLiteral | verbatimString | size | iString | hashedString | hashedVariable | vector | bitNegate;
+            variableExpr.Rule = parenVariableExpr | directAccess | stackAccess | call | classCall | Identifier | getFunction | array;
 
             //Parenthesis
             parenExpr.Rule = "(" + expr + ")";
@@ -283,9 +276,10 @@ namespace TreyarchCompiler
             setVariableFieldExpr.Rule = parenVariableFieldExpr | booleanExpression;
             array.Rule = variableExpr + "[" + booleanExpression + "]" | StringLiteral + "[" + booleanExpression + "]";
             size.Rule = variableExpr + ".size" | StringLiteral + ".size";
+            bitNegate.Rule = ToTerm("~") + mathExpr;
             vector.Rule = "(" + booleanExpression + "," + booleanExpression + "," + booleanExpression + ")";
 
-            arrayAssignment.Rule = NumberLiteral + ":" + booleanExpression | StringLiteral + ":" + booleanExpression | 
+            arrayAssignment.Rule = NumberLiteral + ":" + booleanExpression | StringLiteral + ":" + booleanExpression |
                 hashedString + ":" + booleanExpression | hashedVariable + ":" + booleanExpression;
             arrayAssignments.Rule = MakePlusRule(arrayAssignments, ToTerm(","), arrayAssignment) | arrayAssignment;
             shortHandArray.Rule = "[" + arrayAssignments + "]";
@@ -300,17 +294,14 @@ namespace TreyarchCompiler
             call.Rule = callPrefix + callFrame | callFrame;
 
             //Call Components
-            callPrefix.Rule = variableExpr + ToTerm("thread") | variableExpr + ToTerm("childthread") | variableExpr | ToTerm("thread") | ToTerm("childthread");
+            callPrefix.Rule = variableExpr + ToTerm("thread") | variableExpr | ToTerm("thread");
             callFrame.Rule = baseCall | baseCallPointer;
             classCall.Rule = ToTerm("thread") + ToTerm("[" + "[") + variableExpr + "]]->" + Identifier + parenCallParameters |
-                             ToTerm("childthread") + ToTerm("[" + "[") + variableExpr + "]]->" + Identifier + parenCallParameters |
                              ToTerm("[" + "[") + variableExpr + "]]->" + Identifier + parenCallParameters;
 
             //Script Reference Components
             gscForFunction.Rule = ToTerm("&") + Identifier + "::";
             getFunction.Rule = ToTerm("&") + new NonTerminal("expr", Identifier) | gscForFunction + variableExpr;
-            lazyFunction.Rule = ToTerm("@") + Identifier + "<" + Identifier + ".gsc" + ">" + "::" + Identifier | 
-                                ToTerm("@") + Identifier + "<" + Identifier + ".csc" + ">" + "::" + Identifier;
 
             //Base Call Rules
             baseCall.Rule = Identifier + "::" + Identifier + parenCallParameters | Identifier + parenCallParameters;
@@ -340,12 +331,9 @@ namespace TreyarchCompiler
             //Master Parameter Rules
             parameters.Rule = "(" + optionalParameters + ")" | "(" + ")";
             optionalParameters.Rule = MakeStarRule(optionalParameters, ToTerm(","), parameterExpr) | parameterExpr;
-            
+
             //Parameter Rules
-            parameterExpr.Rule = (Identifier | setOptionalParam) |
-                (ToTerm("&") + Identifier | setOptionalParam) |
-                (ToTerm("*") + Identifier | setOptionalParam) |
-                ToTerm("...");
+            parameterExpr.Rule = Identifier | setOptionalParam;
             setOptionalParam.Rule = Identifier + equalOperator + optionalExpr;
 
             //Parenthesis
@@ -383,8 +371,8 @@ namespace TreyarchCompiler
             waittillframeend.Rule = ToTerm("waittillframeend") + ";";
 
             //Set Variable Field
-            setVariableField.Rule = variableExpr + shortExprOperator + booleanExpression + ";" | 
-                                    variableExpr + equalOperator + setVariableFieldExpr + ";"  | 
+            setVariableField.Rule = variableExpr + shortExprOperator + booleanExpression + ";" |
+                                    variableExpr + equalOperator + setVariableFieldExpr + ";" |
                                     variableExpr + incDecOperator + ";";
             #endregion
 
@@ -421,7 +409,7 @@ namespace TreyarchCompiler
 
             MarkTransient
                 (
-                    boolNotOperand, 
+                    boolNotOperand,
                     boolOperand,
                     parenExpr,
                     parenMathExpr,
@@ -468,7 +456,6 @@ namespace TreyarchCompiler
             callParameters = new NonTerminal("callParameters");
             baseCallPointer = new NonTerminal("baseCallPointer");
             getFunction = new NonTerminal("getFunction");
-            lazyFunction = new NonTerminal("lazyFunction");
             array = new NonTerminal("array");
             size = new NonTerminal("size");
             boolNot = new NonTerminal("boolNot");
@@ -524,6 +511,7 @@ namespace TreyarchCompiler
             includeExtension = new NonTerminal("includeExtension");
             functionDetour = new NonTerminal("functionDetour");
             detourPath = new NonTerminal("detourPath");
+            bitNegate = new NonTerminal("bitNegate");
             Root = new NonTerminal("program") { Rule = directives };
         }
     }

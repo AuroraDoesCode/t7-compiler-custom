@@ -29,6 +29,7 @@ public:
 
 private:
 	static void Exec(int scriptInst);
+	static void Scr_CastInt_Wrapper(int scriptInst);
 	static void Generate();
 	static std::unordered_map<int, void*> CustomFunctions;
 
@@ -44,6 +45,7 @@ private:
 	static void GScr_runtimedetour(int scriptInst);
 	static void GScr_catch_exit(int scriptInst);
 	static void GScr_abort(int scriptInst);
+	static void GScr_getkey(int scriptInst);
 	static void GScr_enableonlinematch(int scriptInst);
 
 public:
