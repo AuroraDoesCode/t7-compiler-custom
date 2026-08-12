@@ -23,7 +23,6 @@ namespace TreyarchCompiler
                 default:
                     return null;
             }
-
             return compiler.Compile();
         }
     }

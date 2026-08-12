@@ -33,8 +33,8 @@ namespace DebugCompiler
         private delegate int CommandHandler(string[] args, string[] opts);
         private Dictionary<ConsoleKey, CommandInfo> CommandTable = new Dictionary<ConsoleKey, CommandInfo>();
         private bool ClearHistory = false;
-        private static string UpdatesURL = "https://raw.githubusercontent.com/AuroraDoesCode/t7-compiler/refs/heads/master/version";
-        private static string UpdaterURL = "https://github.com/AuroraDoesCode/t7-compiler-custom/raw/refs/heads/dev_csc_inj/update.zip";
+        private static string UpdatesURL = "https://raw.githubusercontent.com/auroradoescode/t7-compiler-custom/master/version";
+        private static string UpdaterURL = "https://github.com/AuroraDoesCode/t7-compiler-custom/releases/download/1.0.0.5/t7c_installer.exe";
         private static string motdpath => Path.Combine(Application.StartupPath, "motd");
         private const int motdHrsRemindClear = 4; // number of hours between reminding users about the message of the day
         private static string T7ProcessName = "blackops3";
@@ -1446,7 +1446,8 @@ namespace DebugCompiler
             if (client)
             {
                 NoExcept(FreeT9ScriptClient);
-            } else
+            }
+            else
             {
                 NoExcept(FreeT9ScriptServer);
             }
@@ -1471,12 +1472,6 @@ namespace DebugCompiler
                         {
                             case T89ScriptObject.GSIFields.Detours:
                                 int numdetours = reader.ReadInt32();
-                                for (int j = 0; j < numdetours; j++)
-                                {
-                                    T89ScriptObject.ScriptDetour detour = new T89ScriptObject.ScriptDetour();
-                                    detour.Deserialize(reader);
-                                    gsi.Detours.Add(detour);
-                                }
                                 break;
                         }
                     }
@@ -1495,18 +1490,18 @@ namespace DebugCompiler
 
             bocw.OpenHandle();
             OriginalPID = bocw.BaseProcess.Id;
-            Console.WriteLine($"s_assetPool:ScriptParseTree => {bocw[0x11E50670 + 0x20 * 68]}");
-            var sptGlob = bocw.GetValue<ulong>(bocw[0x11E50670 + 0x20 * 68]);
-            var sptCount = bocw.GetValue<int>(bocw[0x11E50670 + 0x20 * 68 + 0x14]);
+            Console.WriteLine($"s_assetPool:ScriptParseTree => {bocw[0x1273c9f0 + 0x20 * 68]}");
+            var sptGlob = bocw.GetValue<ulong>(bocw[0x1273c9f0 + 0x20 * 68]);
+            var sptCount = bocw.GetValue<int>(bocw[0x1273c9f0 + 0x20 * 68 + 0x14]);
             var SPTEntries = bocw.GetArray<T9SPT>(sptGlob, sptCount);
             replacePath = replacePath.ToLower().Trim().Replace("\\", "/");
             var surrogateScript = T8s64Hash(replacePath); // script we are hooking
             ulong targetScript; // script we are replacing
-
             if (client)
             {
                 targetScript = 0x10aeb2e4f2b455a1;
-            } else
+            }
+            else
             {
                 targetScript = 0x124cecff7280be52;
             }
@@ -1515,7 +1510,8 @@ namespace DebugCompiler
             if (client)
             {
                 cache = InjectCacheClientT9;
-            } else
+            }
+            else
             {
                 cache = InjectCacheT9;
             }
@@ -1652,15 +1648,18 @@ namespace DebugCompiler
                         }
                         */
                     }
-                } catch (Exception e)
+                }
+                catch (Exception e)
                 {
                     Console.WriteLine(e.ToString());
                     return 3;
                 }
-            } catch (Exception e)
+            }
+            catch (Exception e)
             {
                 return Error($"Unknown error while injecting... {e}");
-            } finally
+            }
+            finally
             {
                 bocw.CloseHandle();
             }

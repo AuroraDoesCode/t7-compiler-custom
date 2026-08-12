@@ -41,10 +41,10 @@ namespace TreyarchCompiler.Games
             FunctionMetadata = new Dictionary<string, ScriptFunctionMetaData>();
         }
 
-        public CompiledCodeT8 Compile()
+        public CompiledCode Compile()
         {
             var ticks = DateTime.Now.Ticks;
-            var data = new CompiledCodeT8();
+            var data = new CompiledCode();
             try { CompileTree(); }
             catch (Exception ex)
             {
@@ -56,7 +56,7 @@ namespace TreyarchCompiler.Games
             {
                 data.RequiresGSI = Script.UsingGSI;
                 data.CompiledScript = Script.Serialize();
-                data.HashMap = Script.GetHashMap();
+                data.HashMap = Script.GetHashMap().ToDictionary(x => (uint)x.Key, x => x.Value);
             } 
             catch (Exception ex) { data.Error = $"{ex.Message} {ex.StackTrace}"; }
             var finalticks = DateTime.Now.Ticks;
@@ -241,7 +241,10 @@ namespace TreyarchCompiler.Games
                 EmitFunction(item.Value, item.Key);
             }
         }
-
+        public CompiledCode Compile(string address)
+        {
+            return null;
+        }
         private void SetNamespace()
         {
             if (_tree.Root.ChildNodes[0].ChildNodes.Count <= 0) return;
@@ -1307,14 +1310,5 @@ namespace TreyarchCompiler.Games
             return (context & (uint)desired) > 0;
         }
 
-        CompiledCode ICompiler.Compile()
-        {
-            throw new NotImplementedException();
-        }
-
-        CompiledCode ICompiler.Compile(string address)
-        {
-            throw new NotImplementedException();
-        }
     }
 }
