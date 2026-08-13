@@ -153,7 +153,14 @@ namespace TreyarchCompiler
 
         #region Virtual
         protected virtual IdentifierTerminal IncludeIdentifier => new IdentifierTerminal("include_identifier", @"_/\", "_");
-        protected virtual NonTerminal FunctionFrame => new NonTerminal("functionFrame", ToTerm("autoexec", "autoexec") + functions | functions);
+        protected virtual NonTerminal FunctionFrame => new NonTerminal("functionFrame",
+            (ToTerm("autoexec") + functions)
+            | (ToTerm("event_handler") + "[" + Identifier + "]" + functions)
+            | functions
+            | (ToTerm("function") + ToTerm("autoexec") + functions)
+            | (ToTerm("function") + ToTerm("event_handler") + "[" + Identifier + "]" + functions)
+            | (ToTerm("function") + functions)
+        );
         protected virtual NonTerminal Overrides => new NonTerminal("overrides", Unsupported);
         protected virtual NonTerminal NameSpaceDirective => new NonTerminal("namespace", "#namespace" + Identifier + ";");
         protected virtual NonTerminal verbatimString => new NonTerminal("Unsupported", Unsupported);
@@ -333,7 +340,10 @@ namespace TreyarchCompiler
             optionalParameters.Rule = MakeStarRule(optionalParameters, ToTerm(","), parameterExpr) | parameterExpr;
 
             //Parameter Rules
-            parameterExpr.Rule = Identifier | setOptionalParam;
+            parameterExpr.Rule = Identifier | setOptionalParam |
+                (ToTerm("&") + Identifier | setOptionalParam) |
+                (ToTerm("*") + Identifier | setOptionalParam) |
+                ToTerm("...");
             setOptionalParam.Rule = Identifier + equalOperator + optionalExpr;
 
             //Parenthesis

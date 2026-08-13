@@ -61,6 +61,39 @@ namespace DebugCompiler
             string lv = GetEmbeddedVersion();
             Console.WriteLine("Custom Treyarch Compiler\n");
             Console.WriteLine("Original: https://github.com/shiversoftdev/t7-compiler");
+            if (!options.Contains("--noupdate"))
+            {
+                try
+                {
+                    motd();
+                    ulong local_version = ParseVersion(lv);
+                    ulong remote_version = 0;
+                    Console.WriteLine($"Checking client version... (our version is {local_version:X})");
+                    using (WebClient client = new WebClient())
+                    {
+                        string downloadString = client.DownloadString(UpdatesURL);
+                        remote_version = ParseVersion(downloadString.ToLower().Trim());
+                    }
+                    if (local_version < remote_version)
+                    {
+                        Console.WriteLine("Client out of date, downloading installer...");
+                        string filename = Path.Combine(Path.GetTempPath(), "t7c_installer.exe");
+                        if (File.Exists(filename)) File.Delete(filename);
+                        using (WebClient client = new WebClient())
+                        {
+                            client.DownloadFile(UpdaterURL, filename);
+                        }
+                        Console.WriteLine("Installing update... Please wait for a confirmation window to pop up before attempting to inject again...");
+                        Process.Start(filename, "--install_silent");
+                        return 0;
+                    }
+                }
+                catch
+                {
+                    // we dont care if we cant update tbf
+                    Console.WriteLine($"Error updating client... ignoring update");
+                }
+            }
             if (options.Contains("--boiii"))
             {
                 T7ProcessName = "boiii";
@@ -638,7 +671,6 @@ namespace DebugCompiler
                 } catch { }
             }
 
-            string outName = "compiled";
             if (File.Exists("gsc.conf"))
             {
                 foreach (string line in File.ReadAllLines("gsc.conf"))

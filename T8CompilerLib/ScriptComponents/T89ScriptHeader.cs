@@ -185,7 +185,8 @@ namespace T89CompilerLib.ScriptComponents
                 writer.Write((byte)0);
                 writer.Write(RequiresImplementsCount);
                 writer.Write((int)0);
-            } else if (Script.VM == VM_37)
+            }
+            else if (Script.VM == VM_37)
             {
                 writer.Write(ScriptMagic); //0x0
                 writer.Write(SourceChecksum);
@@ -218,7 +219,8 @@ namespace T89CompilerLib.ScriptComponents
                 writer.Write((ushort)0); //unsupported
                 writer.Write(0); //unsupported
 
-            } else if (Script.VM == VM_38)
+            }
+            else if (Script.VM == VM_38)
             {
                 writer.Write(ScriptMagic); //0x0
                 writer.Write(SourceChecksum);
@@ -250,7 +252,8 @@ namespace T89CompilerLib.ScriptComponents
 
                 writer.Write(raw.Length); // 0x50 //cseg_size
                 writer.Write((uint)0);
-            } else
+            }
+            else
             {
                 throw new Exception($"Invalid VM VM_{Script.VM:x}");
             }

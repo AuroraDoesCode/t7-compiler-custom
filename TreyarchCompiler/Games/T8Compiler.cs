@@ -275,14 +275,14 @@ namespace TreyarchCompiler.Games
             CurrentFunction.FriendlyName = FunctionName;
             foreach (var paramNode in Parameters)
             {
-                
+
                 switch (paramNode.ChildNodes[0].Term.Name)
                 {
                     case "&":
                         AddLocal(CurrentFunction, paramNode.ChildNodes[1].FindTokenAndGetText(), 0x1);
                         break;
                     case "*":
-                        if (Script.VM < VM_37)
+                        if (Script.VM < VM_38)
                         {
                             throw new ArgumentException("* can't be used before BOCW");
                         }

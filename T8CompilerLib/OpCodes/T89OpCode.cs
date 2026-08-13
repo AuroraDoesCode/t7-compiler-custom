@@ -280,7 +280,7 @@ namespace T89CompilerLib.OpCodes
         ClassFunctionChildThreadCall,
         EvalLocalVariableCached2,
         EvalLocalVariableRefCached2,
-        GetNegUnsignedInteger = 192,
+        GetNegUnsignedInteger,
         LazyGetFunction,
 
         T9IteratorKey,

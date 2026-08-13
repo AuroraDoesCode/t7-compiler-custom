@@ -673,7 +673,7 @@ namespace T89CompilerLib.ScriptComponents
                 return __addop_internal(code);
             try
             {
-                if (_ref)   code = new T89OP_GetLocal(Locals, hashformat, Script.VM >= VMREVISIONS.VM_36 ? ScriptOpCode.EvalLocalVariableRefCached : ScriptOpCode.EvalLocalVariableRefCached2);
+                if (_ref) code = new T89OP_GetLocal(Locals, hashformat, Script.VM >= VMREVISIONS.VM_36 ? ScriptOpCode.EvalLocalVariableRefCached : ScriptOpCode.EvalLocalVariableRefCached2); 
                 else        code = new T89OP_GetLocal(Locals, hashformat, ScriptOpCode.EvalLocalVariableCached);
             }
             catch (ArgumentException)
