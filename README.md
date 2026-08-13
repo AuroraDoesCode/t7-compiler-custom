@@ -1,8 +1,9 @@
-# T7 & T8 GSC Compiler
-A compiler and injector for BO3/BO4 gsc\
-Install via the installer https://github.com/shiversoftdev/t7-compiler/releases/tag/current \
+# Black Ops GSC Compiler
+A compiler and injector for BO3/BO4/Black Ops Cold War GSC Scripts\
+Install via the installer https://github.com/aurorabytes/t7-compiler-custom/releases/ \
 Supports compilation from source and injection from compiled scripts\
-Supports auto-importing feature for infinity loader projects
+Supports auto-importing feature for infinity loader projects\
+Requires Visual Studio Code, or My GSC Compiler Frontend
 # Credits
 Scobalula for his original decompiler\
 SyGnUs for his CoD knowledge\
