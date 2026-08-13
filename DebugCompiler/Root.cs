@@ -671,11 +671,15 @@ namespace DebugCompiler
                 } catch { }
             }
 
+            var mode = Modes.MP;
             if (File.Exists("gsc.conf"))
             {
                 foreach (string line in File.ReadAllLines("gsc.conf"))
                 {
                     if (line.Trim().StartsWith("#")) continue;
+                    if (line.Trim().ToLower().Contains("zm_common") && cfg.Game == Games.T8 ||cfg.Game == Games.T9) mode = Modes.ZM;
+                    else if (line.Trim().ToLower().Contains("mp_common") && cfg.Game == Games.T8 || cfg.Game == Games.T9) mode = Modes.ZM;
+                    else if (cfg.Game == Games.T8 || cfg.Game == Games.T9) mode = Modes.SP;
                     cfg.ReadConfig(line);
                 }
             }
@@ -840,7 +844,8 @@ namespace DebugCompiler
                 }
 
                 Console.WriteLine($"Compiling for {cfg.Game}/{cfg.Platform}...");
-                code = Compiler.Compile(cfg.Platform, cfg.Game, Modes.MP, false, source);
+                if (cfg.Game != Games.T7) code = Compiler.Compile(cfg.Platform, cfg.Game, mode, false, source);
+                else code = Compiler.Compile(cfg.Platform, cfg.Game, Modes.MP, false, source);
                 if (code.Error != null && code.Error.Length > 0)
                 {
                     if (code.Error.LastIndexOf("line=") < 0)

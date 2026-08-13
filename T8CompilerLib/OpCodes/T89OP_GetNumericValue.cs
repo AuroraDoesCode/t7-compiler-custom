@@ -124,7 +124,7 @@ namespace T89CompilerLib.OpCodes
                     return ScriptOpCode.GetNegUnsignedShort;
             }
 
-            return unknown > 0 ? ScriptOpCode.GetUnsignedInteger : ScriptOpCode.GetNegUnsignedInteger;
+            return unknown > 0 ? ScriptOpCode.GetUnsignedInteger : ScriptOpCode.GetInteger;
         }
 
         public override string ToString()
