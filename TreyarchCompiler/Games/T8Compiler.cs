@@ -28,6 +28,7 @@ namespace TreyarchCompiler.Games
         private readonly Dictionary<string, ScriptFunctionMetaData> FunctionMetadata;
         private readonly Stack<QOperand> ScriptOperands = new Stack<QOperand>();
 
+
         private readonly Enums.Games Game;
         private T89ScriptObject Script;
         private uint ScriptNamespace = 0x30FCC2BF;

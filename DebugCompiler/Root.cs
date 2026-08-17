@@ -43,7 +43,11 @@ namespace DebugCompiler
             ParseCmdArgs(args, out string[] arguments, out string[] options);
 
             string lv = GetEmbeddedVersion();
-            Console.WriteLine("Custom Treyarch Compiler\n");
+            Console.WriteLine("======================================================\n");
+            Console.WriteLine($"Custom Black Ops GSC Compiler v{lv}\n");
+            Console.WriteLine("Created by Serious, Modified by Ate47 & AuroraDoesCode\n");
+            Console.WriteLine("Supports Black ops 3, Black Ops 4, Black Ops Cold War\n");
+            Console.WriteLine("======================================================\n");
             Console.WriteLine("Original: https://github.com/shiversoftdev/t7-compiler");
             if (!options.Contains("--noupdate"))
             {
@@ -636,7 +640,7 @@ namespace DebugCompiler
                 }
             }
         }
-
+        
         private int cmd_Compile(string[] args, string[] opts)
         {
             CompilerConfig cfg = new CompilerConfig();
@@ -653,16 +657,11 @@ namespace DebugCompiler
                     cfg.Game = (Games)Enum.Parse(typeof(Games), args[1], true);
                 } catch { }
             }
-
-            var mode = Modes.MP;
             if (File.Exists("gsc.conf"))
             {
                 foreach (string line in File.ReadAllLines("gsc.conf"))
                 {
                     if (line.Trim().StartsWith("#")) continue;
-                    if (line.Trim().ToLower().Contains("zm_common") && cfg.Game == Games.T8 ||cfg.Game == Games.T9) mode = Modes.ZM;
-                    else if (line.Trim().ToLower().Contains("mp_common") && cfg.Game == Games.T8 || cfg.Game == Games.T9) mode = Modes.ZM;
-                    else if (cfg.Game == Games.T8 || cfg.Game == Games.T9) mode = Modes.SP;
                     cfg.ReadConfig(line);
                 }
             }
@@ -826,9 +825,8 @@ namespace DebugCompiler
                     return Error(e.Message);
                 }
 
-                Console.WriteLine($"Compiling for {cfg.Game}/{cfg.Platform}...");
-                if (cfg.Game != Games.T7) code = Compiler.Compile(cfg.Platform, cfg.Game, mode, false, source);
-                else code = Compiler.Compile(cfg.Platform, cfg.Game, Modes.MP, false, source);
+                Console.WriteLine($"Compiling for {cfg.Game}/{cfg.Platform}");
+                code = Compiler.Compile(cfg.Platform, cfg.Game, Modes.MP, false, source);
                 if (code.Error != null && code.Error.Length > 0)
                 {
                     if (code.Error.LastIndexOf("line=") < 0)
@@ -1509,10 +1507,12 @@ namespace DebugCompiler
             }
 
             bocw.OpenHandle();
+            string gameDirectory = Path.GetDirectoryName(bocw.BaseProcess.MainModule.FileName);
             OriginalPID = bocw.BaseProcess.Id;
-            Console.WriteLine($"s_assetPool:ScriptParseTree => {bocw[0x1273c9f0 + 0x20 * 68]}");
-            var sptGlob = bocw.GetValue<ulong>(bocw[0x1273c9f0 + 0x20 * 68]);
-            var sptCount = bocw.GetValue<int>(bocw[0x1273c9f0 + 0x20 * 68 + 0x14]);
+            PointerEx off = 0x1273c9f0; //Latest Battle.net offset
+            Console.WriteLine($"s_assetPool:ScriptParseTree => {bocw[off + 0x20 * 68]}"); 
+            var sptGlob = bocw.GetValue<ulong>(bocw[off + 0x20 * 68]);
+            var sptCount = bocw.GetValue<int>(bocw[off + 0x20 * 68 + 0x14]);
             var SPTEntries = bocw.GetArray<T9SPT>(sptGlob, sptCount);
             replacePath = replacePath.ToLower().Trim().Replace("\\", "/");
             var surrogateScript = T8s64Hash(replacePath); // script we are hooking

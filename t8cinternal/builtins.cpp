@@ -151,6 +151,11 @@ void GSCBuiltins::GScr_livesplit(int scriptInst)
 	ScrVm_AddUndefined(scriptInst);
 }
 
+//void GSCBuiltins::GScr_enableonlinematch(int scriptInst)//needs updated for BO4
+//{
+	//int32_t*)PTR_sSessionModeState = (*(int32_t*)PTR_sSessionModeState & ~(1 << 14));
+//}
+
 void GSCBuiltins::GScr_fnprintln(int scriptInst)
 {
 	auto numParams = ScrVm_GetNumParam(scriptInst);

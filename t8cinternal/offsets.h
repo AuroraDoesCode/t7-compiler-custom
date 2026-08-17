@@ -24,3 +24,4 @@
 #define OFF_gObjFileInfoCount OFFSET(0x82f76b0)
 #define OFF_s_runningUILevel OFFSET(0x0000000008B50819)
 #define OFF_Scr_GscObjLink OFFSET(0x2748E70)
+//#define PTR_sSessionModeState REBASE(NULL,0xC092CA0)//BOCW Offset, null BO4
