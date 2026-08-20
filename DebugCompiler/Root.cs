@@ -1355,17 +1355,6 @@ namespace DebugCompiler
 
         private int InjectT8(string replacePath, byte[] buffer, CompilerConfig cfg, bool client)
         {
-            using (SHA256 sha256Hash = SHA256.Create())
-            {
-                byte[] data = sha256Hash.ComputeHash(buffer);
-                StringBuilder sBuilder = new StringBuilder();
-                for (int i = 0; i < data.Length; i++)
-                {
-                    sBuilder.Append(data[i].ToString("x2"));
-                }
-                Console.WriteLine($"Injecting File SHA-256: {sBuilder.ToString()}");
-            }
-
             if (client)
             {
                 NoExcept(FreeT8ScriptClient);
@@ -1633,18 +1622,6 @@ namespace DebugCompiler
 
         private int InjectT9(string replacePath, byte[] buffer, CompilerConfig cfg, bool client)
         {
-
-            using (SHA256 sha256Hash = SHA256.Create())
-            {
-                byte[] data = sha256Hash.ComputeHash(buffer);
-                StringBuilder sBuilder = new StringBuilder();
-                for (int i = 0; i < data.Length; i++)
-                {
-                    sBuilder.Append(data[i].ToString("x2"));
-                }
-                Console.WriteLine($"Injecting File SHA-256: {sBuilder.ToString()}");
-            }
-
             if (client)
             {
                 NoExcept(FreeT9ScriptClient);

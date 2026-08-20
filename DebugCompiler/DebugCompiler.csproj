@@ -151,7 +151,6 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>xcopy /y "$(SolutionDir)$(PlatformName)\Release_Advanced\t7cinternal.dll" "$(TargetDir)"
-xcopy /y "$(SolutionDir)$(PlatformName)\Release_Advanced\t8cinternal.dll" "$(TargetDir)"
-xcopy /y "$(SolutionDir)$(PlatformName)\Release_Advanced\t9cinternal.dll" "$(TargetDir)"</PostBuildEvent>
+xcopy /y "$(SolutionDir)$(PlatformName)\Release_Advanced\t8cinternal.dll" "$(TargetDir)"</PostBuildEvent>
   </PropertyGroup>
 </Project>
