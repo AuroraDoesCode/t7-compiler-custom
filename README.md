@@ -11,4 +11,5 @@ Original Black Ops 2 Compiler crew for their research\
 Scrappy for livesplit builtin\
 MFahim for assisting in identification of Nahimic OSD incompatibility.\
 Ate47 for his work adding ColdWar injection support, BO4 Detours, & more\
-Scroptss for the updated BO3 Offsets
+Scroptss for the updated BO3/BO4 Offsets
+i don’t take any credit for this, all these wonderful people above deserve it.
