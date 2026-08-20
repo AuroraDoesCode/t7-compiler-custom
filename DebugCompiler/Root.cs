@@ -640,7 +640,164 @@ namespace DebugCompiler
                 }
             }
         }
-        
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool ReadProcessMemory(
+    IntPtr hProcess,
+    IntPtr lpBaseAddress,
+    [Out] byte[] lpBuffer,
+    UIntPtr nSize,
+    out UIntPtr lpNumberOfBytesRead);
+
+        private static IntPtr ScanPattern(
+            IntPtr process,
+            IntPtr start,
+            int size,
+            byte[] pattern,
+            string mask)
+        {
+            int patternLen = mask.Length;
+
+            if (patternLen == 0 || patternLen != pattern.Length)
+                return IntPtr.Zero;
+
+            if (patternLen > 0x1000)
+                return IntPtr.Zero;
+
+            long startAddress = start.ToInt64();
+            long endAddress = startAddress + size - patternLen;
+
+            byte[] buffer = new byte[0x1000];
+
+            // Make sure we don't skip possible matches between chunks.
+            int delta = buffer.Length - patternLen;
+
+            if (delta <= 0)
+                return IntPtr.Zero;
+
+            long current = startAddress;
+
+            while (current <= endAddress)
+            {
+                UIntPtr bytesRead;
+
+                bool success = ReadProcessMemory(
+                    process,
+                    new IntPtr(current),
+                    buffer,
+                    (UIntPtr)buffer.Length,
+                    out bytesRead);
+
+                if (!success)
+                {
+                    current += delta;
+                    continue;
+                }
+
+                ulong readCount = bytesRead.ToUInt64();
+
+                if (readCount < (ulong)patternLen)
+                {
+                    current += delta;
+                    continue;
+                }
+
+                int bytesReadInt = (int)Math.Min(
+                    readCount,
+                    (ulong)buffer.Length);
+
+                int limit = bytesReadInt - patternLen;
+
+                for (int offset = 0; offset <= limit; offset++)
+                {
+                    bool found = true;
+
+                    for (int i = 0; i < patternLen; i++)
+                    {
+                        if (mask[i] != '?' &&
+                            buffer[offset + i] != pattern[i])
+                        {
+                            found = false;
+                            break;
+                        }
+                    }
+
+                    if (found)
+                    {
+                        return new IntPtr(current + offset);
+                    }
+                }
+
+                current += delta;
+            }
+
+            return IntPtr.Zero;
+        }
+
+        private static PointerEx ScanPool(
+            IntPtr process,
+            IntPtr moduleBase,
+            int moduleSize)
+        {
+            byte[] pattern =
+            {
+        0x48, 0x8D, 0x05,
+        0x00, 0x00, 0x00, 0x00,
+        0x48, 0xC1, 0xE2,
+        0x00,
+        0x48, 0x03, 0xD0
+    };
+
+            const string mask = "xxx????xxx?xxx";
+
+            IntPtr match = ScanPattern(
+                process,
+                moduleBase,
+                moduleSize,
+                pattern,
+                mask);
+
+            if (match == IntPtr.Zero)
+                return 0;
+
+            Console.WriteLine(
+                $"[SCAN] Pattern match: 0x{match.ToInt64():X}");
+
+            // Read the 32-bit RIP-relative displacement at +3.
+            byte[] deltaBytes = new byte[4];
+
+            if (!ReadProcessMemory(
+                    process,
+                    IntPtr.Add(match, 3),
+                    deltaBytes,
+                    (UIntPtr)4,
+                    out UIntPtr bytesRead) ||
+                bytesRead.ToUInt64() != 4)
+            {
+                Console.WriteLine(
+                    "[SCAN] Failed to read RIP-relative displacement.");
+
+                return 0;
+            }
+
+            int delta = BitConverter.ToInt32(deltaBytes, 0);
+
+            Console.WriteLine(
+                $"[SCAN] RIP displacement: 0x{delta:X8}");
+
+            // 48 8D 05 xx xx xx xx
+            // ^ instruction
+            //
+            // RIP-relative target:
+            // match + 7 + displacement
+            long resolvedAddress =
+                match.ToInt64() + 7L + delta;
+
+            Console.WriteLine(
+                $"[SCAN] Resolved s_assetPool: 0x{resolvedAddress:X}");
+
+            return (PointerEx)resolvedAddress;
+        }
         private int cmd_Compile(string[] args, string[] opts)
         {
             CompilerConfig cfg = new CompilerConfig();
@@ -1253,6 +1410,10 @@ namespace DebugCompiler
             Console.WriteLine($"s_assetPool:ScriptParseTree => {bo4[0x91285b0]}");
             var sptGlob = bo4.GetValue<ulong>(bo4[0x91285b0]);
             var sptCount = bo4.GetValue<int>(bo4[0x91285b0 + 0x14]);
+            Console.WriteLine($"Old SPT:  {bo4[0x91285b0]}");
+            Console.WriteLine($"Base: {bo4.BaseProcess.MainModule.BaseAddress}");
+            Console.WriteLine($"SPT pool: 0x{sptGlob:X}");
+            Console.WriteLine($"SPT count: {sptCount}");
             var SPTEntries = bo4.GetArray<T8SPT>(sptGlob, sptCount);
             replacePath = replacePath.ToLower().Trim().Replace("\\", "/");
             var surrogateScript = T8s64Hash(replacePath); // script we are hooking
@@ -1507,13 +1668,85 @@ namespace DebugCompiler
             }
 
             bocw.OpenHandle();
-            string gameDirectory = Path.GetDirectoryName(bocw.BaseProcess.MainModule.FileName);
-            OriginalPID = bocw.BaseProcess.Id;
-            PointerEx off = 0x1273c9f0; //Latest Battle.net offset
-            Console.WriteLine($"s_assetPool:ScriptParseTree => {bocw[off + 0x20 * 68]}"); 
-            var sptGlob = bocw.GetValue<ulong>(bocw[off + 0x20 * 68]);
-            var sptCount = bocw.GetValue<int>(bocw[off + 0x20 * 68 + 0x14]);
-            var SPTEntries = bocw.GetArray<T9SPT>(sptGlob, sptCount);
+            
+            IntPtr moduleBase =
+                bocw.BaseProcess.MainModule.BaseAddress;
+
+            int moduleSize =
+                bocw.BaseProcess.MainModule.ModuleMemorySize;
+
+            Console.WriteLine(
+                $"Game module base: 0x{moduleBase.ToInt64():X}");
+
+            Console.WriteLine(
+                $"Game module size: 0x{moduleSize:X}");
+
+            Console.WriteLine(
+                "[*] Scanning game module for s_assetPool...");
+
+            PointerEx off = ScanPool(
+                bocw.BaseProcess.Handle,
+                moduleBase,
+                moduleSize);
+
+            if (!off)
+            {
+                return Error(
+                    "Unable to locate s_assetPool. " +
+                    "The current Black Ops Cold War executable is not supported " +
+                    "by the current signature.");
+            }
+
+            Console.WriteLine(
+                $"[+] s_assetPool: 0x{off:X}");
+
+            PointerEx sptPoolAddress =
+                off + (0x20 * 68);
+
+            Console.WriteLine(
+                $"[+] s_assetPool:ScriptParseTree => 0x{sptPoolAddress:X}");
+
+            ulong sptGlob;
+
+            int sptCount;
+
+            try
+            {
+                sptGlob =
+                    bocw.GetValue<ulong>(sptPoolAddress);
+
+                sptCount =
+                    bocw.GetValue<int>(sptPoolAddress + 0x14);
+            }
+            catch (Exception e)
+            {
+                return Error(
+                    $"Failed to read ScriptParseTree asset pool: {e.Message}");
+            }
+
+            Console.WriteLine(
+                $"[+] ScriptParseTree pool: 0x{sptGlob:X}");
+
+            Console.WriteLine(
+                $"[+] ScriptParseTree count: {sptCount}");
+
+            if (sptGlob == 0)
+            {
+                return Error(
+                    "ScriptParseTree pool pointer is null. " +
+                    "Make sure the game is in the pregame lobby/menu.");
+            }
+
+            if (sptCount <= 0 || sptCount > 1000000)
+            {
+                return Error(
+                    $"Invalid ScriptParseTree count: {sptCount}");
+            }
+
+            var SPTEntries =
+                bocw.GetArray<T9SPT>(
+                    sptGlob,
+                    sptCount);
             replacePath = replacePath.ToLower().Trim().Replace("\\", "/");
             var surrogateScript = T8s64Hash(replacePath); // script we are hooking
             ulong targetScript; // script we are replacing
@@ -1686,6 +1919,7 @@ namespace DebugCompiler
 
             return 0;
         }
+
 
         private void FreeT9Script()
         {

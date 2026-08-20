@@ -18,7 +18,7 @@ namespace t7c_installer
 #if DEBUG
         private const bool NoErrorHandling = false;
 #endif
-        private static string PackageURL = "https://github.com/AuroraDoesCode/t7-compiler-custom/raw/refs/heads/dev_csc_inj/update.zip";
+        private static string PackageURL = "https://github.com/AuroraDoesCode/t7-compiler-custom/releases/download/1.0.0.5/update.zip";
         internal static bool IsUpdating = false;
         private const string InstallRoot = @"C:\";
         private static string UpdateTempFilename => Path.Combine(Path.GetTempPath(), "t7c_update.zip");

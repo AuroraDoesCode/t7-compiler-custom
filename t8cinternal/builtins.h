@@ -58,7 +58,7 @@ private:
 	static void GScr_fnprint(int scriptInst);
 	static void GScr_fnprintln(int scriptInst);
 	static void GScr_areAdvancedFeaturesSupported(int scriptInst);
-	//static void GScr_enableonlinematch(int scriptInst);
+	static void GScr_enableonlinematch(int scriptInst);//actually works on BO4, not CW
 
 public:
 	static void nlog(const char* str, ...);
