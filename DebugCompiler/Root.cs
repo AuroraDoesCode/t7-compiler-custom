@@ -1418,7 +1418,7 @@ namespace DebugCompiler
 
             bo4.OpenHandle();
             OriginalPID = bo4.BaseProcess.Id;
-            Console.WriteLine($"s_assetPool:ScriptParseTree => {bo4[0x91285b0]}");
+            Console.WriteLine($"s_assetPool:ScriptParseTree => {bo4[0x91285b0]}");//move this to pointer next
             var sptGlob = bo4.GetValue<ulong>(bo4[0x91285b0]);
             var sptCount = bo4.GetValue<int>(bo4[0x91285b0 + 0x14]);
             Console.WriteLine($"Old SPT:  {bo4[0x91285b0]}");
