@@ -151,7 +151,7 @@ void GSCBuiltins::GScr_livesplit(int scriptInst)
 	ScrVm_AddUndefined(scriptInst);
 }
 
-void GSCBuiltins::GScr_enableonlinematch(int scriptInst)//this needs updated, works on BO4 / BO3
+void GSCBuiltins::GScr_enableonlinematch(int scriptInst)//this needs updated, works on BO4 / BO3, not CW cause the game hates code injection on MP.
 {
 	*(int32_t*)PTR_sSessionModeState = (*(int32_t*)PTR_sSessionModeState & ~(1 << 14));
 }
