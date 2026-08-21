@@ -642,19 +642,9 @@ namespace DebugCompiler
         }
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool ReadProcessMemory(
-    IntPtr hProcess,
-    IntPtr lpBaseAddress,
-    [Out] byte[] lpBuffer,
-    UIntPtr nSize,
-    out UIntPtr lpNumberOfBytesRead);
+        private static extern bool ReadProcessMemory(IntPtr hProcess,IntPtr lpBaseAddress,[Out] byte[] lpBuffer,UIntPtr nSize,out UIntPtr lpNumberOfBytesRead);
 
-        private static IntPtr ScanPattern(
-            IntPtr process,
-            IntPtr start,
-            int size,
-            byte[] pattern,
-            string mask)
+        private static IntPtr ScanPattern(IntPtr process,IntPtr start,int size,byte[] pattern,string mask)
         {
             int patternLen = mask.Length;
 
@@ -681,12 +671,7 @@ namespace DebugCompiler
             {
                 UIntPtr bytesRead;
 
-                bool success = ReadProcessMemory(
-                    process,
-                    new IntPtr(current),
-                    buffer,
-                    (UIntPtr)buffer.Length,
-                    out bytesRead);
+                bool success = ReadProcessMemory(process,new IntPtr(current),buffer,(UIntPtr)buffer.Length,out bytesRead);
 
                 if (!success)
                 {
@@ -702,9 +687,7 @@ namespace DebugCompiler
                     continue;
                 }
 
-                int bytesReadInt = (int)Math.Min(
-                    readCount,
-                    (ulong)buffer.Length);
+                int bytesReadInt = (int)Math.Min(readCount,(ulong)buffer.Length);
 
                 int limit = bytesReadInt - patternLen;
 
@@ -714,8 +697,7 @@ namespace DebugCompiler
 
                     for (int i = 0; i < patternLen; i++)
                     {
-                        if (mask[i] != '?' &&
-                            buffer[offset + i] != pattern[i])
+                        if (mask[i] != '?' && buffer[offset + i] != pattern[i])
                         {
                             found = false;
                             break;
@@ -734,67 +716,41 @@ namespace DebugCompiler
             return IntPtr.Zero;
         }
 
-        private static PointerEx ScanPool(
-            IntPtr process,
-            IntPtr moduleBase,
-            int moduleSize)
+        private static PointerEx ScanPool(IntPtr process,IntPtr moduleBase,int moduleSize)
         {
-            byte[] pattern =
-            {
-        0x48, 0x8D, 0x05,
-        0x00, 0x00, 0x00, 0x00,
-        0x48, 0xC1, 0xE2,
-        0x00,
-        0x48, 0x03, 0xD0
-    };
+            byte[] pattern = { 0x48, 0x8D, 0x05,0x00, 0x00, 0x00, 0x00, 0x48, 0xC1, 0xE2,0x00, 0x48, 0x03, 0xD0 };
 
             const string mask = "xxx????xxx?xxx";
 
-            IntPtr match = ScanPattern(
-                process,
-                moduleBase,
-                moduleSize,
-                pattern,
-                mask);
+            IntPtr match = ScanPattern(process,moduleBase,moduleSize,pattern,mask);
 
             if (match == IntPtr.Zero)
                 return 0;
-
-            Console.WriteLine(
-                $"[SCAN] Pattern match: 0x{match.ToInt64():X}");
+            
+            Console.WriteLine($"[SCAN] Pattern match: 0x{match.ToInt64():X}");
 
             // Read the 32-bit RIP-relative displacement at +3.
             byte[] deltaBytes = new byte[4];
 
-            if (!ReadProcessMemory(
-                    process,
-                    IntPtr.Add(match, 3),
-                    deltaBytes,
-                    (UIntPtr)4,
-                    out UIntPtr bytesRead) ||
-                bytesRead.ToUInt64() != 4)
+            if (!ReadProcessMemory(process,IntPtr.Add(match, 3),deltaBytes,(UIntPtr)4,out UIntPtr bytesRead) ||bytesRead.ToUInt64() != 4)
             {
-                Console.WriteLine(
-                    "[SCAN] Failed to read RIP-relative displacement.");
+                Console.WriteLine("[SCAN] Failed to read RIP-relative displacement.");
 
                 return 0;
             }
 
             int delta = BitConverter.ToInt32(deltaBytes, 0);
 
-            Console.WriteLine(
-                $"[SCAN] RIP displacement: 0x{delta:X8}");
+            Console.WriteLine($"[SCAN] RIP displacement: 0x{delta:X8}");
 
             // 48 8D 05 xx xx xx xx
             // ^ instruction
             //
             // RIP-relative target:
             // match + 7 + displacement
-            long resolvedAddress =
-                match.ToInt64() + 7L + delta;
+            long resolvedAddress = match.ToInt64() + 7L + delta;
 
-            Console.WriteLine(
-                $"[SCAN] Resolved s_assetPool: 0x{resolvedAddress:X}");
+            Console.WriteLine($"[SCAN] Resolved s_assetPool: 0x{resolvedAddress:X}");
 
             return (PointerEx)resolvedAddress;
         }
@@ -1163,9 +1119,8 @@ namespace DebugCompiler
             gsc
         }
 
-        private int InjectT7(string replacePath, byte[] buffer, hotmode hot, bool noruntime)
+        private string PrintScriptHash(byte[] buffer)
         {
-
             using (SHA256 sha256Hash = SHA256.Create())
             {
                 byte[] data = sha256Hash.ComputeHash(buffer);
@@ -1174,8 +1129,13 @@ namespace DebugCompiler
                 {
                     sBuilder.Append(data[i].ToString("x2"));
                 }
-                Console.WriteLine($"Injecting File SHA-256: {sBuilder.ToString()}");
+                return sBuilder.ToString();
             }
+        }
+        private int InjectT7(string replacePath, byte[] buffer, hotmode hot, bool noruntime)
+        {
+
+            Console.WriteLine($"Injecting Script SHA256: {PrintScriptHash(buffer)}");
 
             NoExcept(FreeT7Script);
             GSICInfo gsi = null;
@@ -1355,16 +1315,8 @@ namespace DebugCompiler
 
         private int InjectT8(string replacePath, byte[] buffer, CompilerConfig cfg, bool client)
         {
-            using (SHA256 sha256Hash = SHA256.Create())
-            {
-                byte[] data = sha256Hash.ComputeHash(buffer);
-                StringBuilder sBuilder = new StringBuilder();
-                for (int i = 0; i < data.Length; i++)
-                {
-                    sBuilder.Append(data[i].ToString("x2"));
-                }
-                Console.WriteLine($"Injecting File SHA-256: {sBuilder.ToString()}");
-            }
+
+            Console.WriteLine($"Injecting Script SHA256: {PrintScriptHash(buffer)}");
 
             if (client)
             {
@@ -1634,16 +1586,8 @@ namespace DebugCompiler
         private int InjectT9(string replacePath, byte[] buffer, CompilerConfig cfg, bool client)
         {
 
-            using (SHA256 sha256Hash = SHA256.Create())
-            {
-                byte[] data = sha256Hash.ComputeHash(buffer);
-                StringBuilder sBuilder = new StringBuilder();
-                for (int i = 0; i < data.Length; i++)
-                {
-                    sBuilder.Append(data[i].ToString("x2"));
-                }
-                Console.WriteLine($"Injecting File SHA-256: {sBuilder.ToString()}");
-            }
+
+            Console.WriteLine($"Injecting Script SHA256: {PrintScriptHash(buffer)}");
 
             if (client)
             {
@@ -1692,42 +1636,28 @@ namespace DebugCompiler
 
             bocw.OpenHandle();
             
-            IntPtr moduleBase =
-                bocw.BaseProcess.MainModule.BaseAddress;
+            IntPtr moduleBase =bocw.BaseProcess.MainModule.BaseAddress;
 
-            int moduleSize =
-                bocw.BaseProcess.MainModule.ModuleMemorySize;
+            int moduleSize =bocw.BaseProcess.MainModule.ModuleMemorySize;
 
-            Console.WriteLine(
-                $"Game module base: 0x{moduleBase.ToInt64():X}");
+            Console.WriteLine($"Game module base: 0x{moduleBase.ToInt64():X}");
 
-            Console.WriteLine(
-                $"Game module size: 0x{moduleSize:X}");
+            Console.WriteLine($"Game module size: 0x{moduleSize:X}");
 
-            Console.WriteLine(
-                "[*] Scanning game module for s_assetPool...");
+            Console.WriteLine("[*] Scanning game module for s_assetPool...");
 
-            PointerEx off = ScanPool(
-                bocw.BaseProcess.Handle,
-                moduleBase,
-                moduleSize);
+            PointerEx off = ScanPool(bocw.BaseProcess.Handle,moduleBase,moduleSize);
 
             if (!off)
             {
-                return Error(
-                    "Unable to locate s_assetPool. " +
-                    "The current Black Ops Cold War executable is not supported " +
-                    "by the current signature.");
+                return Error("Unable to locate s_assetPool. The current Black Ops Cold War executable is not supported by the current signature.");
             }
 
-            Console.WriteLine(
-                $"[+] s_assetPool: 0x{off:X}");
+            Console.WriteLine($"[+] s_assetPool: 0x{off:X}");
 
-            PointerEx sptPoolAddress =
-                off + (0x20 * 68);
+            PointerEx sptPoolAddress =off + (0x20 * 68);
 
-            Console.WriteLine(
-                $"[+] s_assetPool:ScriptParseTree => 0x{sptPoolAddress:X}");
+            Console.WriteLine($"[+] s_assetPool:ScriptParseTree => 0x{sptPoolAddress:X}");
 
             ulong sptGlob;
 
@@ -1735,41 +1665,31 @@ namespace DebugCompiler
 
             try
             {
-                sptGlob =
-                    bocw.GetValue<ulong>(sptPoolAddress);
+                sptGlob =bocw.GetValue<ulong>(sptPoolAddress);
 
-                sptCount =
-                    bocw.GetValue<int>(sptPoolAddress + 0x14);
+                sptCount =bocw.GetValue<int>(sptPoolAddress + 0x14);
             }
             catch (Exception e)
             {
-                return Error(
-                    $"Failed to read ScriptParseTree asset pool: {e.Message}");
+                return Error($"Failed to read ScriptParseTree asset pool: {e.Message}");
             }
 
-            Console.WriteLine(
-                $"[+] ScriptParseTree pool: 0x{sptGlob:X}");
+            Console.WriteLine($"[+] ScriptParseTree pool: 0x{sptGlob:X}");
 
-            Console.WriteLine(
-                $"[+] ScriptParseTree count: {sptCount}");
+            Console.WriteLine($"[+] ScriptParseTree count: {sptCount}");
 
             if (sptGlob == 0)
             {
-                return Error(
-                    "ScriptParseTree pool pointer is null. " +
-                    "Make sure the game is in the pregame lobby/menu.");
+                return Error("ScriptParseTree pool pointer is null. Make sure the game is in the pregame lobby/menu.");
             }
 
             if (sptCount <= 0 || sptCount > 1000000)
             {
-                return Error(
-                    $"Invalid ScriptParseTree count: {sptCount}");
+                return Error($"Invalid ScriptParseTree count: {sptCount}");
             }
 
             var SPTEntries =
-                bocw.GetArray<T9SPT>(
-                    sptGlob,
-                    sptCount);
+                bocw.GetArray<T9SPT>(sptGlob,sptCount);
             replacePath = replacePath.ToLower().Trim().Replace("\\", "/");
             var surrogateScript = T8s64Hash(replacePath); // script we are hooking
             ulong targetScript; // script we are replacing
