@@ -5,7 +5,7 @@
 #include <iostream>
 
 constexpr auto BO3_MSSTORE = "72c8a21763adbfac9e1b2bcd6f93b05ecf437610e16430d99a1680ea0f827c17";
-constexpr auto BO3_STEAM_2023 = "b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44";
+constexpr auto BO3_STEAM_2023 = "66b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44";
 constexpr auto BO3_STEAM_2026 = "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5";
 
 
@@ -63,33 +63,33 @@ Bo3Version DetectBo3Version()
 	char buf[128];
 	sprintf_s(buf, "Bo3 EXE SHA-256: %s\n", hash.c_str());
 
-    // Debug
-	std::ofstream log("t7logfile.txt", std::ios_base::app | std::ios_base::out);
-	log << "\nGame Version:" << "";
+    // Debug, useful in case Bo3 gets another update
+	//std::ofstream log("t7logfile.txt", std::ios_base::app | std::ios_base::out);
+	//log << "\nGame Version:" << "";
 
 	Bo3Version version;
 
 	// Get game version by hash
 	if (hash == BO3_MSSTORE ){
 		version = Bo3Version::MSStore;
-		log << "Microsoft Store" << buf;
+		//log << "Microsoft Store" << buf;
 	}
 	else if (hash == BO3_STEAM_2023 ){
 		version = Bo3Version::Steam2023;
-		log << "Steam 2023" << buf;
+		//log << "Steam 2023" << buf;
 	}
 	else if (hash == BO3_STEAM_2026 ){
 		version = Bo3Version::Steam2026;
-		log << "Steam 2026" << buf;
+		//log << "Steam 2026" << buf;
 	}
 	// If not found, assume latest Steam Version
 	else {
 		version = Bo3Version::Steam2026;
-		log << "Couldnt find Game version for sha256" << buf;
+		//log << "Couldnt find Game version for sha256" << buf;
 	}
 
-	log << "\n";
-	log.close();
+	//log << "\n";
+	//log.close();
 	return version;
 }
 

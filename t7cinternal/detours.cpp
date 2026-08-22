@@ -150,7 +150,7 @@ INT64 Sentient_GetFunction(INT32 a1, INT32* a2, INT32* a3)
 	v6 = 8 * v3;
 	*a2 = ((INT32*)REBASE(0x333E320, 0x32BF320, 0x3131F50))[v6 + 1];
 	*a3 = ((INT32*)REBASE(0x333E320, 0x32BF320, 0x3131F50))[v6 + 2];
-	return *(INT64*)(&((INT32*)REBASE(0x32BF320, 0x32BF320, 0x3131F50))[v6 + 4]);
+	return *(INT64*)(&((INT32*)REBASE(0x333E320, 0x32BF320, 0x3131F50))[v6 + 4]);
 }
 
 INT64 Scr_GetFunction_(INT32 canonID, INT32* type, INT32* min_args, INT32* max_args)
