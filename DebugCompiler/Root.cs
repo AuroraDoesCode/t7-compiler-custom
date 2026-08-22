@@ -21,6 +21,14 @@ using TreyarchCompiler.Enums;
 using TreyarchCompiler.Utilities;
 using XDevkit;
 
+// Supported Bo3 versions
+enum Bo3Version
+{
+    Steam2023, // Downpatched Steam
+    Steam2026, // Current Steam
+    MSStore // Bo3 Enhanced
+};
+
 namespace DebugCompiler
 {
     class Root
@@ -1132,6 +1140,53 @@ namespace DebugCompiler
                 return sBuilder.ToString();
             }
         }
+
+        Bo3Version DetectBo3Version(ProcessEx bo3)
+        {
+            bool isWindowsStore = !(bo3["GameChat2.dll"] is null);
+
+            //if (isWindowsStore)
+                //return Bo3Version.MSStore;
+
+            try
+            {
+                string exePath = bo3.BaseProcess.MainModule.FileName;
+                Console.WriteLine($"\nBo3.exe path: {exePath}");
+
+                using (SHA256 sha256 = SHA256.Create())
+                using (FileStream stream = File.OpenRead(exePath))
+                {
+                    byte[] hashBytes = sha256.ComputeHash(stream);
+                    string hash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+
+                    Console.WriteLine($"Bo3.exe SHA-256: {hash}");
+
+                    if (hash == "72c8a21763adbfac9e1b2bcd6f93b05ecf437610e16430d99a1680ea0f827c17"){
+                        Console.WriteLine($"Bo3 Enhanced detected!\n");
+                        return Bo3Version.MSStore;
+                    }
+
+                    // Aquí pondrás los hashes reales cuando los conozcas
+                    // if (hash == "hash_de_steam_2023_aqui")
+                    //     return Bo3Version.Steam2023;
+
+                    // if (hash == "hash_de_steam_2026_aqui")
+                    //     return Bo3Version.Steam2026;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error calculating hash: {ex.Message}");
+            }
+
+            if (isWindowsStore)
+                return Bo3Version.MSStore;
+
+            // Fallback
+            return Bo3Version.Steam2026;
+        }
+
+
         private int InjectT7(string replacePath, byte[] buffer, hotmode hot, bool noruntime)
         {
 
@@ -1184,7 +1239,28 @@ namespace DebugCompiler
             bo3.OpenHandle();
             bo3.SetDefaultCallType(ExCallThreadType.XCTT_QUAPC);
             OriginalPID = bo3.BaseProcess.Id;
-            PointerEx off = IsWindowsStore ? 0xF3B1330 : 0x9388AB0;
+            PointerEx off = 0x0;
+            Bo3Version version = DetectBo3Version(bo3);
+            if(version == Bo3Version.MSStore)
+            {
+                off = 0xF3B1330;
+            }
+            else if(version == Bo3Version.Steam2023)
+            {
+                off = 0x9407AB0;
+            }
+            else if(version == Bo3Version.Steam2026)
+            {
+                off = 0x9388AB0;
+            }
+            else
+            {
+                return Error("Unsupported Black Ops III version.");
+            }
+
+
+
+            //PointerEx off = REBASE(0x9407AB0, 0x9388AB0, 0xF3B1330);
             Console.WriteLine($"s_assetPool:ScriptParseTree => {bo3["blackops3.exe"][off]}");
             var sptGlob = bo3.GetValue<ulong>(bo3["blackops3.exe"][off]);
             var sptCount = bo3.GetValue<int>(bo3["blackops3.exe"][off + 0x14]);

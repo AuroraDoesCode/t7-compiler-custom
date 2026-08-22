@@ -100,12 +100,12 @@ void Scr_Error(uint32_t inst, const char* error, uint8_t force_terminal)
 {
 	if (IS_WINSTORE)
 	{
-		((void(__fastcall*)(uint32_t, const char*))REBASE(NULL, 0x1392DF0))(inst, error); // Scr_SetErrorMessage
-		*((uint8_t*)REBASE(NULL, 0x3F66B50) + 0x8A40llu * inst + 43) = force_terminal;
-		((void(__fastcall*)(uint32_t))REBASE(NULL, 0x138E030))(inst); // Scr_ErrorInternal (__noreturn btw)
+		((void(__fastcall*)(uint32_t, const char*))REBASE(NULL, NULL, 0x1392DF0))(inst, error); // Scr_SetErrorMessage
+		*((uint8_t*)REBASE(NULL, NULL, 0x3F66B50) + 0x8A40llu * inst + 43) = force_terminal;
+		((void(__fastcall*)(uint32_t))REBASE(NULL, NULL, 0x138E030))(inst); // Scr_ErrorInternal (__noreturn btw)
 		return;
 	}
-	((void(__fastcall*)(uint32_t, const char*, uint32_t))REBASE(0x12EA450, NULL))(inst, error, force_terminal);
+	((void(__fastcall*)(uint32_t, const char*, uint32_t))REBASE(0x12EA430, 0x12EA450, NULL))(inst, error, force_terminal);
 }
 
 uint32_t Scr_GetType(uint32_t inst, uint32_t index)
@@ -117,8 +117,8 @@ uint32_t Scr_GetType(uint32_t inst, uint32_t index)
 	const char* v5; // rax
 
 	v3 = 0x8A40llu * inst;
-	if (index < *(uint32_t*)(REBASE(0x5124840, 0x3F66B50) + v3 + 56))
-		return *(uint32_t*)(*(uint64_t*)(REBASE(0x5124840, 0x3F66B50) + v3 + 32) - 16llu * index + 8);
+	if (index < *(uint32_t*)(REBASE(0x51A3840, 0x5124840, 0x3F66B50) + v3 + 56))
+		return *(uint32_t*)(*(uint64_t*)(REBASE(0x51A3840, 0x5124840, 0x3F66B50) + v3 + 32) - 16llu * index + 8);
 
 	sprintf_s(err_buff, "parameter %d does not exist", index + 1);
 	Scr_Error(inst, err_buff, false);
@@ -130,12 +130,12 @@ void Scr_AddInt(int scriptInst, uint32_t val)
 	if (IS_WINSTORE)
 	{
 		// note: this is SO WEIRD!!! they inlined Scr_AddInt but NOT IncInParam, whereas steam doesnt inline Scr_AddInt but DOES inline IncInParam... wtf??
-		((void(__fastcall*)(uint32_t))REBASE(NULL, 0x1390370))(scriptInst); // IncInParam
-		*((uint32_t*)(*(uint64_t*)REBASE(NULL, 0x3F66B70)) + 2) = 7;
-		*(uint32_t*)(*(uint64_t*)REBASE(NULL, 0x3F66B70)) = val;
+		((void(__fastcall*)(uint32_t))REBASE(NULL, NULL, 0x1390370))(scriptInst); // IncInParam
+		*((uint32_t*)(*(uint64_t*)REBASE(NULL, NULL, 0x3F66B70)) + 2) = 7;
+		*(uint32_t*)(*(uint64_t*)REBASE(NULL, NULL, 0x3F66B70)) = val;
 		return;
 	}
-	((void(__fastcall*)(int, __int32))REBASE(0x12E9890, NULL))(scriptInst, val); // Scr_AddInt
+	((void(__fastcall*)(int, __int32))REBASE(0x12E9870, 0x12E9890, NULL))(scriptInst, val); // Scr_AddInt
 }
 
 void GSCBuiltins::Scr_CastInt_Wrapper(int scriptInst)

@@ -52,10 +52,21 @@ template <typename T> void chgmem(__int64 addy, T copy)
 	VirtualProtect((void*)addy, sizeof(T), oldprotect, &oldprotect);
 }
 
+// Supported Bo3 versions
+enum class Bo3Version
+{
+    Steam2023, // Downpatched Steam
+    Steam2026, // Current Steam
+    MSStore // Bo3 Enhanced
+};
+
+extern Bo3Version g_Bo3Version;
+
 void chgmem(__int64 addy, __int32 size, void* copy);
 
 extern const char MSELECT[];
 
 #define IS_WINSTORE (*(uint8_t*)(MSELECT + 0xC) == (uint8_t)0xd0)
 #define OFFSET_S(off) (*(uint64_t*)((uint64_t)(NtCurrentTeb()->ProcessEnvironmentBlock) + 0x10) + (uint64_t)off)
-#define REBASE(steam, msstore) ((uint64_t(__fastcall*)(uint64_t, uint64_t))(char*)MSELECT)(steam, msstore)
+//#define REBASE(steam, msstore) ((uint64_t(__fastcall*)(uint64_t, uint64_t))(char*)MSELECT)(steam, msstore)
+#define REBASE(steam2023, steam2026, msstore) ((uint64_t(__fastcall*)(uint64_t, uint64_t))(char*)MSELECT)(steam2023, steam2026, msstore)
