@@ -64,9 +64,20 @@ extern Bo3Version g_Bo3Version;
 
 void chgmem(__int64 addy, __int32 size, void* copy);
 
-extern const char MSELECT[];
+//extern const char MSELECT[];
 
-#define IS_WINSTORE (*(uint8_t*)(MSELECT + 0xC) == (uint8_t)0xd0)
+inline uint64_t SelectOffset(uint64_t off2023, uint64_t off2026, uint64_t offMS)
+{
+	switch (g_Bo3Version)
+	{
+	case Bo3Version::Steam2023: return OFFSET_S(off2023);
+	case Bo3Version::Steam2026: return OFFSET_S(off2026);
+	case Bo3Version::MSStore:   return OFFSET_S(offMS);
+	default:                    return OFFSET_S(off2026);
+	}
+}
+#define IS_WINSTORE (g_Bo3Version == Bo3Version::MSStore)
+//#define IS_WINSTORE (*(uint8_t*)(MSELECT + 0xC) == (uint8_t)0xd0)
 #define OFFSET_S(off) (*(uint64_t*)((uint64_t)(NtCurrentTeb()->ProcessEnvironmentBlock) + 0x10) + (uint64_t)off)
 //#define REBASE(steam, msstore) ((uint64_t(__fastcall*)(uint64_t, uint64_t))(char*)MSELECT)(steam, msstore)
-#define REBASE(steam2023, steam2026, msstore) ((uint64_t(__fastcall*)(uint64_t, uint64_t))(char*)MSELECT)(steam2023, steam2026, msstore)
+#define REBASE(steam2023, steam2026, msstore) ((uint64_t(__fastcall*)(uint64_t, uint64_t))(char*)SelectOffset)(steam2023, steam2026, msstore)

@@ -25,6 +25,9 @@ void NTAPI tls_callback(PVOID DllHandle, DWORD dwReason, PVOID)
 	}
 	is_tls_initialized = true;
 
+	// Get the Bo3 version and store it in the global variable
+	g_Bo3Version = DetectBo3Version();
+
 	VirtualProtect((LPVOID)MSELECT, sizeof(MSELECT), PAGE_EXECUTE_READWRITE, &dwReason);
 	auto base_address_game = *(uint64_t*)((uint64_t)(NtCurrentTeb()->ProcessEnvironmentBlock) + 0x10);
 	*(uint64_t*)(MSELECT + 2) = base_address_game;
