@@ -129,12 +129,22 @@ void Scr_AddInt(int scriptInst, uint32_t val)
 {
 	if (IS_WINSTORE)
 	{
+		// Debug
+		std::ofstream log("t7logfile.txt", std::ios_base::app | std::ios_base::out);
+		log << "Scr_AddInt MSStore";
+		log.close();
+
 		// note: this is SO WEIRD!!! they inlined Scr_AddInt but NOT IncInParam, whereas steam doesnt inline Scr_AddInt but DOES inline IncInParam... wtf??
 		((void(__fastcall*)(uint32_t))REBASE(NULL, NULL, 0x1390370))(scriptInst); // IncInParam
 		*((uint32_t*)(*(uint64_t*)REBASE(NULL, NULL, 0x3F66B70)) + 2) = 7;
 		*(uint32_t*)(*(uint64_t*)REBASE(NULL, NULL, 0x3F66B70)) = val;
 		return;
 	}
+
+	// Debug
+	std::ofstream log("t7logfile.txt", std::ios_base::app | std::ios_base::out);
+	log << "Scr_AddInt Steam";
+	log.close();
 	((void(__fastcall*)(int, __int32))REBASE(0x12E9870, 0x12E9890, NULL))(scriptInst, val); // Scr_AddInt
 }
 
@@ -483,9 +493,17 @@ bool IsForegroundWindowBlackOps3()
 
 void GSCBuiltins::GScr_getkey(int scriptInst)
 {
+	// Debug
+	std::ofstream log("t7logfile.txt", std::ios_base::app | std::ios_base::out);
+	log << "GScr_getkey";
 
 	if (!IsForegroundWindowBlackOps3())
 	{
+
+		// Debug
+		log << "Bo3 is NOT foreground" << "\n";
+		log.close();
+
 		Scr_AddInt(scriptInst, 0);
 		return;
 	}
@@ -494,6 +512,11 @@ void GSCBuiltins::GScr_getkey(int scriptInst)
 	SHORT state = GetAsyncKeyState(key);
 
 	bool isPressed = (state & 0x8000) != 0;
+
+	// Debug
+	log << "Pressed key " <<  key << " ? " << isPressed << "\n";
+	log.close();
+
 	Scr_AddInt(scriptInst, isPressed ? 1 : 0);
 }
 
@@ -508,7 +531,8 @@ void GSCBuiltins::GScr_catch_exit(int scriptInst)
 
 void GSCBuiltins::GScr_abort(int scriptInst)
 {
-	((void(__fastcall*)())REBASE(0, 0))();
+	//((void(__fastcall*)())REBASE(0, 0, 0))(); // Calls to address 0? forces a crash?
+	((void(__fastcall*)())0)(); // This should also crash?
 }
 
 void GSCBuiltins::nlog(const char* str, ...)

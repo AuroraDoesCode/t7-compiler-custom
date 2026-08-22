@@ -21,6 +21,7 @@ using TreyarchCompiler.Enums;
 using TreyarchCompiler.Utilities;
 using XDevkit;
 
+
 // Supported Bo3 versions
 enum Bo3Version
 {
@@ -1127,7 +1128,8 @@ namespace DebugCompiler
             gsc
         }
 
-        private string PrintScriptHash(byte[] buffer)
+        // Hash GscObj
+        private string ComputeSHA256Hash(byte[] buffer)
         {
             using (SHA256 sha256Hash = SHA256.Create())
             {
@@ -1141,46 +1143,76 @@ namespace DebugCompiler
             }
         }
 
+        // Hash game.exe
+        private string ComputeSHA256Hash(Stream stream)
+        {
+            using (SHA256 sha256Hash = SHA256.Create())
+            {
+                byte[] data = sha256Hash.ComputeHash(stream);
+
+                StringBuilder sBuilder = new StringBuilder();
+                for (int i = 0; i < data.Length; i++)
+                {
+                    sBuilder.Append(data[i].ToString("x2"));
+                }
+
+                return sBuilder.ToString();
+            }
+        }
+
         Bo3Version DetectBo3Version(ProcessEx bo3)
         {
-            bool isWindowsStore = !(bo3["GameChat2.dll"] is null);
-
+            // Maybe useful since all Bo3 Enhanced versions use same offset? Maybe Bo3 Enhanced gets an update
+            //bool isWindowsStore = !(bo3["GameChat2.dll"] is null);
             //if (isWindowsStore)
-                //return Bo3Version.MSStore;
+            //return Bo3Version.MSStore;
 
             try
             {
                 string exePath = bo3.BaseProcess.MainModule.FileName;
-                Console.WriteLine($"\nBo3.exe path: {exePath}");
+                //Console.WriteLine($"\nBo3.exe path: {exePath}"); // Debug
 
-                using (SHA256 sha256 = SHA256.Create())
+                //using (SHA256 sha256 = SHA256.Create())
+                //using (FileStream stream = File.OpenRead(exePath))
                 using (FileStream stream = File.OpenRead(exePath))
                 {
-                    byte[] hashBytes = sha256.ComputeHash(stream);
-                    string hash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+                    //byte[] hashBytes = sha256.ComputeHash(stream);
+                    //string hash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
 
-                    Console.WriteLine($"Bo3.exe SHA-256: {hash}");
+                    string hash = ComputeSHA256Hash(stream);
 
+                    //Console.WriteLine($"Bo3.exe SHA-256: {hash}"); // Debug
+
+
+                    // MSSTore
                     if (hash == "72c8a21763adbfac9e1b2bcd6f93b05ecf437610e16430d99a1680ea0f827c17"){
                         Console.WriteLine($"Bo3 Enhanced detected!\n");
                         return Bo3Version.MSStore;
                     }
 
-                    // Aquí pondrás los hashes reales cuando los conozcas
-                    // if (hash == "hash_de_steam_2023_aqui")
-                    //     return Bo3Version.Steam2023;
+                    // Steam 2023
+                    if (hash == "66b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44")
+                    {
+                        Console.WriteLine($"Bo3 Steam 2023 detected!");
+                        return Bo3Version.Steam2023;
+                    }
 
-                    // if (hash == "hash_de_steam_2026_aqui")
-                    //     return Bo3Version.Steam2026;
+                    // Steam 2026
+                    if (hash == "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5")
+                    {
+                        Console.WriteLine($"Bo3 Steam 2023 detected!");
+                        return Bo3Version.Steam2026;
+                    }
+
+                    // If we cant find a version, lets assume latest Steam version
+                    Console.WriteLine($"Unknown Bo3 version...");
+                    return Bo3Version.Steam2026;
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error calculating hash: {ex.Message}");
             }
-
-            if (isWindowsStore)
-                return Bo3Version.MSStore;
 
             // Fallback
             return Bo3Version.Steam2026;
@@ -1190,7 +1222,7 @@ namespace DebugCompiler
         private int InjectT7(string replacePath, byte[] buffer, hotmode hot, bool noruntime)
         {
 
-            Console.WriteLine($"Injecting Script SHA256: {PrintScriptHash(buffer)}");
+            Console.WriteLine($"Injecting Script SHA256: {ComputeSHA256Hash(buffer)}");
 
             NoExcept(FreeT7Script);
             GSICInfo gsi = null;
@@ -1392,7 +1424,7 @@ namespace DebugCompiler
         private int InjectT8(string replacePath, byte[] buffer, CompilerConfig cfg, bool client)
         {
 
-            Console.WriteLine($"Injecting Script SHA256: {PrintScriptHash(buffer)}");
+            Console.WriteLine($"Injecting Script SHA256: {ComputeSHA256Hash(buffer)}");
 
             if (client)
             {
@@ -1663,7 +1695,7 @@ namespace DebugCompiler
         {
 
 
-            Console.WriteLine($"Injecting Script SHA256: {PrintScriptHash(buffer)}");
+            Console.WriteLine($"Injecting Script SHA256: {ComputeSHA256Hash(buffer)}");
 
             if (client)
             {
