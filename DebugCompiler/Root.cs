@@ -1172,17 +1172,9 @@ namespace DebugCompiler
                 string exePath = bo3.BaseProcess.MainModule.FileName;
                 //Console.WriteLine($"\nBo3.exe path: {exePath}"); // Debug
 
-                //using (SHA256 sha256 = SHA256.Create())
-                //using (FileStream stream = File.OpenRead(exePath))
                 using (FileStream stream = File.OpenRead(exePath))
                 {
-                    //byte[] hashBytes = sha256.ComputeHash(stream);
-                    //string hash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
-
                     string hash = ComputeSHA256Hash(stream);
-
-                    //Console.WriteLine($"Bo3.exe SHA-256: {hash}"); // Debug
-
 
                     // MSSTore
                     if (hash == "72c8a21763adbfac9e1b2bcd6f93b05ecf437610e16430d99a1680ea0f827c17"){
