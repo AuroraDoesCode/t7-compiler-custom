@@ -1172,6 +1172,14 @@ namespace DebugCompiler
                 string exePath = bo3.BaseProcess.MainModule.FileName;
                 //Console.WriteLine($"\nBo3.exe path: {exePath}"); // Debug
 
+                // Injecting on a custom client, lets change the path to hash
+                if (T7ProcessName != "blackops3")
+                {
+                    //Console.WriteLine($"Expected exe name: {T7ProcessName}\n"); // Debug
+                    exePath = exePath.Replace(T7ProcessName, "blackops3");
+                    //Console.WriteLine($"New Bo3.exe path: {exePath}\n"); // Debug
+                }
+
                 using (FileStream stream = File.OpenRead(exePath))
                 {
                     string hash = ComputeSHA256Hash(stream);
@@ -1197,7 +1205,7 @@ namespace DebugCompiler
                     }
 
                     // If we cant find a version, lets assume latest Steam version
-                    Console.WriteLine($"Unknown Bo3 version...");
+                    Console.WriteLine($"Unknown Bo3 version...\nPath: {exePath} \nHash: {hash}");
                     return Bo3Version.Steam2026;
                 }
             }
