@@ -1200,7 +1200,7 @@ namespace DebugCompiler
                     // Steam 2026
                     if (hash == "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5")
                     {
-                        Console.WriteLine($"Bo3 Steam 2023 detected!");
+                        Console.WriteLine($"Bo3 Steam 2026 detected!");
                         return Bo3Version.Steam2026;
                     }
 
