@@ -21,6 +21,15 @@ using TreyarchCompiler.Enums;
 using TreyarchCompiler.Utilities;
 using XDevkit;
 
+
+// Supported Bo3 versions
+enum Bo3Version
+{
+    Steam2023, // Downpatched Steam
+    Steam2026, // Current Steam
+    MSStore // Bo3 Enhanced
+};
+
 namespace DebugCompiler
 {
     class Root
@@ -1119,7 +1128,8 @@ namespace DebugCompiler
             gsc
         }
 
-        private string PrintScriptHash(byte[] buffer)
+        // Hash GscObj
+        private string ComputeSHA256Hash(byte[] buffer)
         {
             using (SHA256 sha256Hash = SHA256.Create())
             {
@@ -1132,10 +1142,87 @@ namespace DebugCompiler
                 return sBuilder.ToString();
             }
         }
+
+        // Hash game.exe
+        private string ComputeSHA256Hash(Stream stream)
+        {
+            using (SHA256 sha256Hash = SHA256.Create())
+            {
+                byte[] data = sha256Hash.ComputeHash(stream);
+
+                StringBuilder sBuilder = new StringBuilder();
+                for (int i = 0; i < data.Length; i++)
+                {
+                    sBuilder.Append(data[i].ToString("x2"));
+                }
+
+                return sBuilder.ToString();
+            }
+        }
+
+        Bo3Version DetectBo3Version(ProcessEx bo3)
+        {
+            // Maybe useful since all Bo3 Enhanced versions use same offset? Maybe Bo3 Enhanced gets an update
+            //bool isWindowsStore = !(bo3["GameChat2.dll"] is null);
+            //if (isWindowsStore)
+            //return Bo3Version.MSStore;
+
+            try
+            {
+                string exePath = bo3.BaseProcess.MainModule.FileName;
+                //Console.WriteLine($"\nBo3.exe path: {exePath}"); // Debug
+
+                // Injecting on a custom client, lets change the path to hash
+                if (T7ProcessName != "blackops3")
+                {
+                    //Console.WriteLine($"Expected exe name: {T7ProcessName}\n"); // Debug
+                    exePath = exePath.Replace(T7ProcessName, "blackops3");
+                    //Console.WriteLine($"New Bo3.exe path: {exePath}\n"); // Debug
+                }
+
+                using (FileStream stream = File.OpenRead(exePath))
+                {
+                    string hash = ComputeSHA256Hash(stream);
+
+                    // MSSTore
+                    if (hash == "72c8a21763adbfac9e1b2bcd6f93b05ecf437610e16430d99a1680ea0f827c17"){
+                        Console.WriteLine($"Bo3 Enhanced detected!\n");
+                        return Bo3Version.MSStore;
+                    }
+
+                    // Steam 2023
+                    if (hash == "66b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44")
+                    {
+                        Console.WriteLine($"Bo3 Steam 2023 detected!");
+                        return Bo3Version.Steam2023;
+                    }
+
+                    // Steam 2026
+                    if (hash == "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5")
+                    {
+                        Console.WriteLine($"Bo3 Steam 2026 detected!");
+                        return Bo3Version.Steam2026;
+                    }
+
+                    // If we cant find a version, lets assume latest Steam version
+                    Console.WriteLine($"Unknown Bo3 version...\nPath: {exePath} \nHash: {hash}");
+                    return Bo3Version.Steam2026;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error calculating hash: {ex.Message}");
+            }
+
+            // Fallback
+            return Bo3Version.Steam2026;
+        }
+
+
         private int InjectT7(string replacePath, byte[] buffer, hotmode hot, bool noruntime)
         {
 
-            Console.WriteLine($"Injecting Script SHA256: {PrintScriptHash(buffer)}");
+            Console.WriteLine($"Injecting Script SHA256: {ComputeSHA256Hash(buffer)}");
 
             NoExcept(FreeT7Script);
             GSICInfo gsi = null;
@@ -1184,7 +1271,28 @@ namespace DebugCompiler
             bo3.OpenHandle();
             bo3.SetDefaultCallType(ExCallThreadType.XCTT_QUAPC);
             OriginalPID = bo3.BaseProcess.Id;
-            PointerEx off = IsWindowsStore ? 0xF3B1330 : 0x9388AB0;
+            PointerEx off = 0x0;
+            Bo3Version version = DetectBo3Version(bo3);
+            if(version == Bo3Version.MSStore)
+            {
+                off = 0xF3B1330;
+            }
+            else if(version == Bo3Version.Steam2023)
+            {
+                off = 0x9407AB0;
+            }
+            else if(version == Bo3Version.Steam2026)
+            {
+                off = 0x9388AB0;
+            }
+            else
+            {
+                return Error("Unsupported Black Ops III version.");
+            }
+
+
+
+            //PointerEx off = REBASE(0x9407AB0, 0x9388AB0, 0xF3B1330);
             Console.WriteLine($"s_assetPool:ScriptParseTree => {bo3["blackops3.exe"][off]}");
             var sptGlob = bo3.GetValue<ulong>(bo3["blackops3.exe"][off]);
             var sptCount = bo3.GetValue<int>(bo3["blackops3.exe"][off + 0x14]);
@@ -1316,7 +1424,7 @@ namespace DebugCompiler
         private int InjectT8(string replacePath, byte[] buffer, CompilerConfig cfg, bool client)
         {
 
-            Console.WriteLine($"Injecting Script SHA256: {PrintScriptHash(buffer)}");
+            Console.WriteLine($"Injecting Script SHA256: {ComputeSHA256Hash(buffer)}");
 
             if (client)
             {
@@ -1587,7 +1695,7 @@ namespace DebugCompiler
         {
 
 
-            Console.WriteLine($"Injecting Script SHA256: {PrintScriptHash(buffer)}");
+            Console.WriteLine($"Injecting Script SHA256: {ComputeSHA256Hash(buffer)}");
 
             if (client)
             {
