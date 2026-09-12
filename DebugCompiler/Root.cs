@@ -25,8 +25,9 @@ using XDevkit;
 // Supported Bo3 versions
 enum Bo3Version
 {
-    Steam2023, // Downpatched Steam
-    Steam2026, // Current Steam
+    Steam_3_march_2023, // Steam 3 March 2023
+    Steam_19_february_2026, // Steam 19 February 2026
+    Steam_10_september_2026, // Steam 10 September 2026
     MSStore // Bo3 Enhanced
 };
 
@@ -653,26 +654,51 @@ namespace DebugCompiler
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool ReadProcessMemory(IntPtr hProcess,IntPtr lpBaseAddress,[Out] byte[] lpBuffer,UIntPtr nSize,out UIntPtr lpNumberOfBytesRead);
 
-        private static IntPtr ScanPattern(IntPtr process,IntPtr start,int size,byte[] pattern,string mask)
+        private static IntPtr ScanPattern( IntPtr process, IntPtr start, int size, byte[] pattern, string mask)
         {
             int patternLen = mask.Length;
 
+            Console.WriteLine();
+            Console.WriteLine("========== ScanPattern ==========");
+            Console.WriteLine($"[ScanPattern] Start:        0x{start.ToInt64():X}");
+            Console.WriteLine($"[ScanPattern] Size:         0x{size:X} ({size} bytes)");
+            Console.WriteLine($"[ScanPattern] Pattern len:  {patternLen}");
+            Console.WriteLine($"[ScanPattern] Mask:         {mask}");
+            Console.WriteLine($"[ScanPattern] Pattern:      {BitConverter.ToString(pattern).Replace("-", " ")}");
+
             if (patternLen == 0 || patternLen != pattern.Length)
+            {
+                Console.WriteLine("[ScanPattern] ERROR: Pattern/mask length mismatch.");
+                Console.WriteLine("=================================");
                 return IntPtr.Zero;
+            }
 
             if (patternLen > 0x1000)
+            {
+                Console.WriteLine("[ScanPattern] ERROR: Pattern exceeds 0x1000 bytes.");
+                Console.WriteLine("=================================");
                 return IntPtr.Zero;
+            }
 
             long startAddress = start.ToInt64();
             long endAddress = startAddress + size - patternLen;
+
+            Console.WriteLine($"[ScanPattern] End address: 0x{endAddress:X}");
 
             byte[] buffer = new byte[0x1000];
 
             // Make sure we don't skip possible matches between chunks.
             int delta = buffer.Length - patternLen;
 
+            Console.WriteLine($"[ScanPattern] Buffer size:  0x{buffer.Length:X}");
+            Console.WriteLine($"[ScanPattern] Scan delta:   0x{delta:X}");
+
             if (delta <= 0)
+            {
+                Console.WriteLine("[ScanPattern] ERROR: Invalid scan delta.");
+                Console.WriteLine("=================================");
                 return IntPtr.Zero;
+            }
 
             long current = startAddress;
 
@@ -680,7 +706,7 @@ namespace DebugCompiler
             {
                 UIntPtr bytesRead;
 
-                bool success = ReadProcessMemory(process,new IntPtr(current),buffer,(UIntPtr)buffer.Length,out bytesRead);
+                bool success = ReadProcessMemory(process, new IntPtr(current), buffer, (UIntPtr)buffer.Length, out bytesRead);
 
                 if (!success)
                 {
@@ -696,7 +722,7 @@ namespace DebugCompiler
                     continue;
                 }
 
-                int bytesReadInt = (int)Math.Min(readCount,(ulong)buffer.Length);
+                int bytesReadInt = (int)Math.Min(readCount, (ulong)buffer.Length);
 
                 int limit = bytesReadInt - patternLen;
 
@@ -715,41 +741,72 @@ namespace DebugCompiler
 
                     if (found)
                     {
-                        return new IntPtr(current + offset);
+                        IntPtr result = new IntPtr(current + offset);
+
+                        Console.WriteLine($"[ScanPattern] MATCH FOUND: 0x{result.ToInt64():X}");
+                        Console.WriteLine("=================================");
+
+                        return result;
                     }
                 }
 
                 current += delta;
             }
 
+            Console.WriteLine("[ScanPattern] No match found.");
+            Console.WriteLine("=================================");
+
             return IntPtr.Zero;
         }
-
-        private static PointerEx ScanPool(IntPtr process,IntPtr moduleBase,int moduleSize)
+        private static PointerEx ScanPool( IntPtr process, IntPtr moduleBase, int moduleSize, byte[] pattern, string mask)
         {
-            byte[] pattern = { 0x48, 0x8D, 0x05,0x00, 0x00, 0x00, 0x00, 0x48, 0xC1, 0xE2,0x00, 0x48, 0x03, 0xD0 };
+            Console.WriteLine();
+            Console.WriteLine("========================================");
+            Console.WriteLine("              ScanPool");
+            Console.WriteLine("========================================");
 
-            const string mask = "xxx????xxx?xxx";
+            Console.WriteLine($"[ScanPool] Module base: 0x{moduleBase.ToInt64():X}");
+            Console.WriteLine($"[ScanPool] Module size: 0x{moduleSize:X} ({moduleSize} bytes)");
+            Console.WriteLine($"[ScanPool] Pattern: {BitConverter.ToString(pattern).Replace("-", " ")}");
+            Console.WriteLine($"[ScanPool] Mask: {mask}");
+            Console.WriteLine($"[ScanPool] Pattern length: {pattern.Length}");
 
-            IntPtr match = ScanPattern(process,moduleBase,moduleSize,pattern,mask);
+            IntPtr match = ScanPattern(process, moduleBase, moduleSize, pattern, mask);
 
             if (match == IntPtr.Zero)
+            {
+                // Debug
+                Console.WriteLine("[ScanPool] Pattern not found.");
+                Console.WriteLine("========================================");
                 return 0;
-            
-            Console.WriteLine($"[SCAN] Pattern match: 0x{match.ToInt64():X}");
+            }
+
+            // Debug
+            Console.WriteLine($"[ScanPool] Pattern match: 0x{match.ToInt64():X}");
 
             // Read the 32-bit RIP-relative displacement at +3.
             byte[] deltaBytes = new byte[4];
 
-            if (!ReadProcessMemory(process,IntPtr.Add(match, 3),deltaBytes,(UIntPtr)4,out UIntPtr bytesRead) ||bytesRead.ToUInt64() != 4)
+            IntPtr displacementAddress = IntPtr.Add(match, 3);
+
+            // Debug
+            Console.WriteLine($"[ScanPool] Displacement address: 0x{displacementAddress.ToInt64():X}");
+
+            if (!ReadProcessMemory(process, IntPtr.Add(match, 3), deltaBytes, (UIntPtr)4, out UIntPtr bytesRead) || bytesRead.ToUInt64() != 4)
             {
-                Console.WriteLine("[SCAN] Failed to read RIP-relative displacement.");
+                // Debug
+                Console.WriteLine("[ScanPool] Failed to read RIP-relative displacement.");
+                Console.WriteLine("========================================");
 
                 return 0;
             }
 
+            // Debug
+            Console.WriteLine($"[ScanPool] Displacement bytes: {BitConverter.ToString(deltaBytes).Replace("-", " ")}");
+
             int delta = BitConverter.ToInt32(deltaBytes, 0);
 
+            // Debug
             Console.WriteLine($"[SCAN] RIP displacement: 0x{delta:X8}");
 
             // 48 8D 05 xx xx xx xx
@@ -757,12 +814,18 @@ namespace DebugCompiler
             //
             // RIP-relative target:
             // match + 7 + displacement
+
             long resolvedAddress = match.ToInt64() + 7L + delta;
 
-            Console.WriteLine($"[SCAN] Resolved s_assetPool: 0x{resolvedAddress:X}");
+            Console.WriteLine($"[ScanPool] Match address: 0x{match.ToInt64():X}");
+            Console.WriteLine($"[ScanPool] Instruction size:  7");
+            Console.WriteLine($"[ScanPool] Resolved s_assetPool: 0x{resolvedAddress:X}");
+            Console.WriteLine("========================================");
 
             return (PointerEx)resolvedAddress;
         }
+
+
         private int cmd_Compile(string[] args, string[] opts)
         {
             CompilerConfig cfg = new CompilerConfig();
@@ -1163,50 +1226,67 @@ namespace DebugCompiler
         Bo3Version DetectBo3Version(ProcessEx bo3)
         {
             // Maybe useful since all Bo3 Enhanced versions use same offset? Maybe Bo3 Enhanced gets an update
-            //bool isWindowsStore = !(bo3["GameChat2.dll"] is null);
-            //if (isWindowsStore)
-            //return Bo3Version.MSStore;
+            bool isWindowsStore = !(bo3["GameChat2.dll"] is null);
+            if (isWindowsStore)
+            {
+                Console.WriteLine($"Bo3 Enhanced detected!\n");
+                return Bo3Version.MSStore;
+            }
+
 
             try
             {
                 string exePath = bo3.BaseProcess.MainModule.FileName;
-                //Console.WriteLine($"\nBo3.exe path: {exePath}"); // Debug
+                Console.WriteLine($"\nBo3.exe path: {exePath}"); // Debug
 
                 // Injecting on a custom client, lets change the path to hash
                 if (T7ProcessName != "blackops3")
                 {
-                    //Console.WriteLine($"Expected exe name: {T7ProcessName}\n"); // Debug
-                    exePath = exePath.Replace(T7ProcessName, "blackops3");
-                    //Console.WriteLine($"New Bo3.exe path: {exePath}\n"); // Debug
+                    Console.WriteLine($"Expected exe name: {T7ProcessName}\n");
+
+                    // Get only the path, no .exe
+                    string directory = Path.GetDirectoryName(exePath);
+
+                    // Add game .exe name to path
+                    exePath = Path.Combine(directory, "blackops3.exe");
+
+                    Console.WriteLine($"New Bo3.exe path: {exePath}\n");
                 }
 
                 using (FileStream stream = File.OpenRead(exePath))
                 {
                     string hash = ComputeSHA256Hash(stream);
 
-                    // MSSTore
+                    // MS Store
                     if (hash == "72c8a21763adbfac9e1b2bcd6f93b05ecf437610e16430d99a1680ea0f827c17"){
                         Console.WriteLine($"Bo3 Enhanced detected!\n");
                         return Bo3Version.MSStore;
                     }
 
-                    // Steam 2023
+                    // Steam 3 March 2023
                     if (hash == "66b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44")
                     {
-                        Console.WriteLine($"Bo3 Steam 2023 detected!");
-                        return Bo3Version.Steam2023;
+                        Console.WriteLine($"Bo3 Steam 3 March 2023 detected!");
+                        return Bo3Version.Steam_3_march_2023;
                     }
 
-                    // Steam 2026
+                    // Steam 19 February 2026
                     if (hash == "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5")
                     {
-                        Console.WriteLine($"Bo3 Steam 2026 detected!");
-                        return Bo3Version.Steam2026;
+                        Console.WriteLine($"Bo3 Steam 19 February 2026 detected!");
+                        return Bo3Version.Steam_19_february_2026;
+                    }
+
+                    // Steam 10 September 2026
+                    if (hash == "51ca63bbc660e0826943c60da67606f6bcb4b3b519528b5e0548c68c9423a323")
+                    {
+                        Console.WriteLine($"Bo3 Steam 10 September 2026 detected!");
+                        return Bo3Version.Steam_10_september_2026;
                     }
 
                     // If we cant find a version, lets assume latest Steam version
                     Console.WriteLine($"Unknown Bo3 version...\nPath: {exePath} \nHash: {hash}");
-                    return Bo3Version.Steam2026;
+                    return Bo3Version.Steam_10_september_2026;
                 }
             }
             catch (Exception ex)
@@ -1215,7 +1295,7 @@ namespace DebugCompiler
             }
 
             // Fallback
-            return Bo3Version.Steam2026;
+            return Bo3Version.Steam_10_september_2026;
         }
 
 
@@ -1271,7 +1351,10 @@ namespace DebugCompiler
             bo3.OpenHandle();
             bo3.SetDefaultCallType(ExCallThreadType.XCTT_QUAPC);
             OriginalPID = bo3.BaseProcess.Id;
-            PointerEx off = 0x0;
+
+            Bo3Version version = DetectBo3Version(bo3);
+
+            /*PointerEx off = 0x0;
             Bo3Version version = DetectBo3Version(bo3);
             if(version == Bo3Version.MSStore)
             {
@@ -1288,14 +1371,99 @@ namespace DebugCompiler
             else
             {
                 return Error("Unsupported Black Ops III version.");
+            }*/
+
+
+            IntPtr moduleBase = bo3["blackops3.exe"].BaseAddress;
+            int moduleSize = bo3["blackops3.exe"].BaseModule.ModuleMemorySize;
+
+            Console.WriteLine($"Game module base: 0x{moduleBase.ToInt64():X}");
+            Console.WriteLine($"Game module size: 0x{moduleSize:X}");
+            Console.WriteLine("[*] 6 Scanning game module for s_assetPool...");
+
+            PointerEx scanned_off;
+
+            // Bo3 Enhanced
+            if ( IsWindowsStore)
+            {
+                /*byte[] bo3_scriptparsetree_pattern = {
+                    0x48, 0x89, 0x05,          // mov [rip+disp32], rax
+                    0x00, 0x00, 0x00, 0x00,    // disp32
+                    0x48, 0x89, 0x05,          // mov [rip+disp32], rax
+                    0x00, 0x00, 0x00, 0x00,    // disp32
+                    0xC7, 0x05                 // mov dword ptr [rip+disp32], ...
+                };*/
+
+                byte[] bo3_scriptparsetree_pattern = {
+                    0x48, 0x89, 0x05,                // mov [rip+disp32], rax
+                    0x00, 0x00, 0x00, 0x00,          // disp32
+                    0x48, 0x89, 0x05,                // mov [rip+disp32], rax
+                    0x00, 0x00, 0x00, 0x00,          // disp32
+                    0xC7, 0x05,                      // mov dword ptr [rip+disp32], imm32
+                    0x00, 0x00, 0x00, 0x00,          // disp32
+                    0x58, 0x00, 0x00, 0x00           // imm32 = 0x58
+                };
+
+                //const string bo3_scriptparsetree_mask = "xxx????xxx????xx";
+
+                const string bo3_scriptparsetree_mask = "xxx????xxx????xx????xxxx";
+                scanned_off = ScanPool(bo3.BaseProcess.Handle, moduleBase, moduleSize, bo3_scriptparsetree_pattern, bo3_scriptparsetree_mask);
+            }
+            // Bo3 Steam
+            else
+            {
+                byte[] bo3_scriptparsetree_pattern = {
+                    0x48, 0x89, 0x15,          // mov [rip+disp32], rdx
+                    0x00, 0x00, 0x00, 0x00,    // disp32
+                    0xC7, 0x05,                // mov dword ptr [rip+disp32], imm32
+                    0x00, 0x00, 0x00, 0x00,    // disp32
+                    0x18, 0x00, 0x00, 0x00     // imm32 = 0x18
+                };
+
+                const string bo3_scriptparsetree_mask = "xxx????xx????xxxx";
+                scanned_off = ScanPool(bo3.BaseProcess.Handle, moduleBase, moduleSize, bo3_scriptparsetree_pattern, bo3_scriptparsetree_mask);
             }
 
 
+            // Couldnt find spt pattern...
+            if (!scanned_off)
+            {
+                return Error("Unable to locate s_assetPool. The current Black Ops 3 executable is not supported by the current signature.");
+            }
 
-            //PointerEx off = REBASE(0x9407AB0, 0x9388AB0, 0xF3B1330);
-            Console.WriteLine($"s_assetPool:ScriptParseTree => {bo3["blackops3.exe"][off]}");
-            var sptGlob = bo3.GetValue<ulong>(bo3["blackops3.exe"][off]);
-            var sptCount = bo3.GetValue<int>(bo3["blackops3.exe"][off + 0x14]);
+
+            ulong sptGlob;
+            int sptCount;
+
+            try
+            {
+                sptGlob = bo3.GetValue<ulong>(scanned_off);
+                sptCount = bo3.GetValue<int>(scanned_off + 0x14);
+            }
+            catch (Exception e)
+            {
+                return Error($"Failed to read ScriptParseTree asset pool: {e.Message}");
+            }
+
+            Console.WriteLine($"[+] ScriptParseTree pool: 0x{sptGlob:X}");
+            Console.WriteLine($"[+] ScriptParseTree count: {sptCount}");
+            Console.WriteLine($"s_assetPool:ScriptParseTree => {scanned_off:X}");
+
+            PointerEx off = 0xF3B1330;
+            Console.WriteLine($"[OLD]s_assetPool:ScriptParseTree => {bo3["blackops3.exe"][off]}");
+
+            // Invalid sptGlob
+            if (sptGlob == 0)
+            {
+                return Error("ScriptParseTree pool pointer is null.");
+            }
+
+            // Invalid SptCount
+            if (sptCount <= 0 || sptCount > 1000000)
+            {
+                return Error($"Invalid ScriptParseTree count: {sptCount}");
+            }
+
             var SPTEntries = bo3.GetArray<T7SPT>(sptGlob, sptCount);
             for (int i = 0; i < SPTEntries.Length; i++)
             {
@@ -1744,38 +1912,43 @@ namespace DebugCompiler
 
             bocw.OpenHandle();
             
-            IntPtr moduleBase =bocw.BaseProcess.MainModule.BaseAddress;
+            IntPtr moduleBase = bocw.BaseProcess.MainModule.BaseAddress;
 
-            int moduleSize =bocw.BaseProcess.MainModule.ModuleMemorySize;
+            int moduleSize = bocw.BaseProcess.MainModule.ModuleMemorySize;
 
             Console.WriteLine($"Game module base: 0x{moduleBase.ToInt64():X}");
-
             Console.WriteLine($"Game module size: 0x{moduleSize:X}");
-
             Console.WriteLine("[*] Scanning game module for s_assetPool...");
 
-            PointerEx off = ScanPool(bocw.BaseProcess.Handle,moduleBase,moduleSize);
+            byte[] cw_scriptparsetree_pattern ={
+                0x48, 0x8D, 0x05,
+                0x00, 0x00, 0x00, 0x00,
+                0x48, 0xC1, 0xE2,
+                0x00,
+                0x48, 0x03, 0xD0
+            };
+
+            const string cw_scriptparsetree_mask = "xxx????xxx?xxx";
+
+            PointerEx off = ScanPool(bocw.BaseProcess.Handle,moduleBase,moduleSize, cw_scriptparsetree_pattern, cw_scriptparsetree_mask);
 
             if (!off)
             {
                 return Error("Unable to locate s_assetPool. The current Black Ops Cold War executable is not supported by the current signature.");
             }
 
+            PointerEx sptPoolAddress = off + (0x20 * 68);
+
             Console.WriteLine($"[+] s_assetPool: 0x{off:X}");
-
-            PointerEx sptPoolAddress =off + (0x20 * 68);
-
             Console.WriteLine($"[+] s_assetPool:ScriptParseTree => 0x{sptPoolAddress:X}");
 
             ulong sptGlob;
-
             int sptCount;
 
             try
             {
-                sptGlob =bocw.GetValue<ulong>(sptPoolAddress);
-
-                sptCount =bocw.GetValue<int>(sptPoolAddress + 0x14);
+                sptGlob = bocw.GetValue<ulong>(sptPoolAddress);
+                sptCount = bocw.GetValue<int>(sptPoolAddress + 0x14);
             }
             catch (Exception e)
             {
@@ -1783,7 +1956,6 @@ namespace DebugCompiler
             }
 
             Console.WriteLine($"[+] ScriptParseTree pool: 0x{sptGlob:X}");
-
             Console.WriteLine($"[+] ScriptParseTree count: {sptCount}");
 
             if (sptGlob == 0)
